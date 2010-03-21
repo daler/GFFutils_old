@@ -79,9 +79,9 @@ latex:
 gffutils:
 	$(SPHINXBUILD) -b html $(ALLSPHINXOPTS) $(BUILDDIR)/html
 	cp source/overview.rst $(SRCDIR)/README
-	$(SPHINXBUILD) -b latex $(ALLSPHINXOPTS) $(BUILDDIR)/latex
-	cd $(BUILDDIR)/latex && make all-pdf &&	cp GFFutils.pdf ../../../README.pdf	
-	python rst2wiki.py < source/overview.rst > Home.wiki
+	#$(SPHINXBUILD) -b latex $(ALLSPHINXOPTS) $(BUILDDIR)/latex
+	#cd $(BUILDDIR)/latex && make all-pdf &&	cp GFFutils.pdf ../../../README.pdf	
+	#python rst2wiki.py < source/overview.rst > Home.wiki
 
 wiki:
 	python rst2wiki.py < source/overview.rst > Home.wiki

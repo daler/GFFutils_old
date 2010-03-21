@@ -43,6 +43,8 @@
             
   <div class="section" id="overview">
 <h1>Overview<a class="headerlink" href="#overview" title="Permalink to this headline">¶</a></h1>
+<p>Documentation can be found on the BitBucket wiki or in the
+<tt class="docutils literal"><span class="pre">doc/build/html/index.html</span></tt> file.</p>
 <p>This module is used for doing things with GFF files that are too
 complicated for a simple <tt class="docutils literal"><span class="pre">awk</span></tt> or <tt class="docutils literal"><span class="pre">grep</span></tt> command line call.</p>
 <p>For example, to get a BED file of genes from a GFF file, you can use something
@@ -50,10 +52,10 @@ simple like:</p>
 <div class="highlight-python"><pre>grep "gene" chr2.gff | awk '{print $1,$4,$5}'</pre>
 </div>
 <p>But how would you use commandline tools to get a BED file of 3&#8217; exons from
-genes longer than 5 kb?  Or how would you get the average number of
-isoforms for genes on the plus strand?  These more complex questions are
-actually quite easy to answer using <tt class="xref docutils literal"><span class="pre">GFFutils</span></tt> &#8211; see the <a class="reference internal" href="#examples">Examples</a>
-for how it&#8217;s done.</p>
+genes longer than 5 kb?  Or how would you get the average number of isoforms
+for genes on the plus strand?  These more complex questions are actually quite
+easy to answer using <tt class="xref docutils literal"><span class="pre">GFFutils</span></tt> &#8211; see the <strong>Examples</strong> below for how it&#8217;s
+done.</p>
 </div>
 <div class="section" id="installation">
 <h1>Installation<a class="headerlink" href="#installation" title="Permalink to this headline">¶</a></h1>
@@ -471,6 +473,39 @@ features in the original GFF file:</p>
 </pre></div>
 </div>
 </div>
+<div class="section" id="constituitively-expressed-exons">
+<h2>Constituitively expressed exons<a class="headerlink" href="#constituitively-expressed-exons" title="Permalink to this headline">¶</a></h2>
+<p>The trick here is that if all of a gene&#8217;s isoforms are found in the list of
+parents of an exon, then that exon is found in all isoforms of that gene.</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="n">fout</span> <span class="o">=</span> <span class="nb">open</span><span class="p">(</span><span class="s">&#39;constituitively-expressed-exons.gff&#39;</span><span class="p">,</span><span class="s">&#39;w&#39;</span><span class="p">)</span>
+<span class="k">for</span> <span class="n">gene</span> <span class="ow">in</span> <span class="n">G</span><span class="o">.</span><span class="n">features_of_type</span><span class="p">(</span><span class="s">&#39;gene&#39;</span><span class="p">):</span>
+    <span class="n">const_expr_exons</span> <span class="o">=</span> <span class="p">[]</span>
+    <span class="n">isoforms</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">G</span><span class="o">.</span><span class="n">children</span><span class="p">(</span><span class="n">gene</span><span class="o">.</span><span class="n">id</span><span class="p">)</span> <span class="k">if</span> <span class="n">i</span><span class="o">.</span><span class="n">featuretype</span><span class="o">==</span><span class="s">&#39;mRNA&#39;</span><span class="p">]</span>
+    <span class="n">isoform_ids</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span><span class="o">.</span><span class="n">id</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">isoforms</span><span class="p">]</span>
+    <span class="n">children</span> <span class="o">=</span> <span class="n">G</span><span class="o">.</span><span class="n">children</span><span class="p">(</span><span class="n">gene</span><span class="o">.</span><span class="n">id</span><span class="p">,</span><span class="n">level</span><span class="o">=</span><span class="mf">2</span><span class="p">)</span>
+    <span class="k">for</span> <span class="n">child</span> <span class="ow">in</span> <span class="n">children</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">child</span><span class="o">.</span><span class="n">featuretype</span> <span class="o">!=</span> <span class="s">&#39;exon&#39;</span><span class="p">:</span>
+            <span class="k">continue</span>
+        <span class="n">exon_transcript_parent_ids</span> <span class="o">=</span> <span class="p">[</span><span class="n">i</span><span class="o">.</span><span class="n">id</span> <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="n">G</span><span class="o">.</span><span class="n">parents</span><span class="p">(</span><span class="n">exon</span><span class="o">.</span><span class="n">id</span><span class="p">,</span><span class="n">level</span><span class="o">=</span><span class="mf">1</span><span class="p">)</span> <span class="k">if</span> <span class="n">i</span><span class="o">.</span><span class="n">featuretype</span><span class="o">==</span><span class="s">&#39;mRNA&#39;</span><span class="p">]</span>
+
+        <span class="c"># check to make sure each of the gene&#39;s isoforms are in this exon.</span>
+        <span class="n">in_all_isoforms</span> <span class="o">=</span> <span class="bp">True</span>
+        <span class="k">for</span> <span class="n">i_id</span> <span class="ow">in</span> <span class="n">isoform_ids</span><span class="p">:</span>
+            <span class="k">if</span> <span class="n">i_id</span> <span class="ow">not</span> <span class="ow">in</span> <span class="n">exon_transcript_parent_ids</span><span class="p">:</span>
+                <span class="n">in_all_isoforms</span> <span class="o">=</span> <span class="bp">False</span>
+        <span class="k">if</span> <span class="n">in_all_isoforms</span><span class="p">:</span>
+            <span class="n">const_expr_exons</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="n">child</span><span class="p">)</span>
+
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">const_expr_exons</span><span class="p">)</span> <span class="o">&gt;</span> <span class="mf">0</span><span class="p">:</span>
+        <span class="n">fout</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">gene</span><span class="o">.</span><span class="n">tostring</span><span class="p">())</span>
+        <span class="k">for</span> <span class="n">isoform</span> <span class="ow">in</span> <span class="n">isoforms</span><span class="p">:</span>
+            <span class="n">fout</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">isoform</span><span class="o">.</span><span class="n">tostring</span><span class="p">())</span>
+        <span class="k">for</span> <span class="n">exon</span> <span class="ow">in</span> <span class="n">const_expr_exons</span><span class="p">:</span>
+            <span class="n">fout</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">exon</span><span class="o">.</span><span class="n">tostring</span><span class="p">())</span>
+<span class="n">fout</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
 </div>
 
 
@@ -500,6 +535,7 @@ features in the original GFF file:</p>
 <li><a class="reference external" href="#bed-file-of-3-exons-from-genes-longer-than-5-kb">BED file of 3&#8217; exons from genes longer than 5 kb</a></li>
 <li><a class="reference external" href="#histogram-of-exon-lengths">Histogram of exon lengths</a></li>
 <li><a class="reference external" href="#average-number-of-isoforms-for-genes-on-plus-strand">Average number of isoforms for genes on plus strand</a></li>
+<li><a class="reference external" href="#constituitively-expressed-exons">Constituitively expressed exons</a></li>
 </ul>
 </li>
 </ul>

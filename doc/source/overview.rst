@@ -3,8 +3,10 @@ Overview
 Documentation can be found on the BitBucket wiki or in the
 ``doc/build/html/index.html`` file.
 
+
 This module is used for doing things with GFF files that are too
 complicated for a simple ``awk`` or ``grep`` command line call.
+
 
 For example, to get a BED file of genes from a GFF file, you can use something
 simple like::
@@ -466,3 +468,40 @@ Average number of isoforms for genes on plus strand
         isoform_count += len(isoforms)
         gene_count += 1
     mean_isoform_count = float(isoform_count) / gene_count
+
+Constituitively expressed exons
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The trick here is that if all of a gene's isoforms are found in the list of
+parents of an exon, then that exon is found in all isoforms of that gene.
+
+::
+    
+    fout = open('constituitively-expressed-exons.gff','w')
+    for gene in G.features_of_type('gene'):
+        const_expr_exons = []
+        isoforms = [i for i in G.children(gene.id) if i.featuretype=='mRNA']
+        isoform_ids = [i.id for i in isoforms]
+        children = G.children(gene.id,level=2)
+        for child in children:
+            if child.featuretype != 'exon':
+                continue
+            exon_transcript_parent_ids = [i.id for i in G.parents(exon.id,level=1) if i.featuretype=='mRNA']
+            
+            # check to make sure each of the gene's isoforms are in this exon.
+            in_all_isoforms = True
+            for i_id in isoform_ids:
+                if i_id not in exon_transcript_parent_ids:
+                    in_all_isoforms = False
+            if in_all_isoforms:
+                const_expr_exons.append(child)
+
+        if len(const_expr_exons) > 0:
+            fout.write(gene.tostring())
+            for isoform in isoforms:
+                fout.write(isoform.tostring())
+            for exon in const_expr_exons:
+                fout.write(exon.tostring())
+    fout.close()
+                    
+            
