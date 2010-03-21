@@ -89,6 +89,7 @@ wiki:
 upload:
 	if [ -d "wiki" ]; then rm -r wiki; fi
 	hg clone https://ryandale@bitbucket.org/ryandale/gffutils/wiki/
+	python rst2wiki.py < source/overview.rst > Home.wiki
 	mv Home.wiki wiki
 	cd wiki && hg commit -m 'auto-update of Home.wiki' && hg push
 	

@@ -1,12 +1,10 @@
 Overview
 --------
-Documentation can be found on the BitBucket wiki or in the
+Documentation for this module can be found on the BitBucket wiki or in the
 ``doc/build/html/index.html`` file.
-
 
 This module is used for doing things with GFF files that are too
 complicated for a simple ``awk`` or ``grep`` command line call.
-
 
 For example, to get a BED file of genes from a GFF file, you can use something
 simple like::
