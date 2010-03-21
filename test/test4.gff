@@ -1,0 +1,4 @@
+chrFAKE	FlyBase	gene	1	170	.	+	.	ID=gn1
+chrFAKE	FlyBase	mRNA	1	170	.	+	.	ID=tr1;Parent=gn1
+chrFAKE	FlyBase	exon	60	93	.	+	.	ID=ex1;Parent=tr1
+chrFAKE	FlyBase	exon	100	130	.	+	.	ID=ex2;Parent=tr1
