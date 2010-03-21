@@ -78,10 +78,19 @@ latex:
 
 gffutils:
 	$(SPHINXBUILD) -b html $(ALLSPHINXOPTS) $(BUILDDIR)/html
-	cp $(BUILDDIR)/html/index.html $(SRCDIR)/README.html
 	cp source/overview.rst $(SRCDIR)/README
 	$(SPHINXBUILD) -b latex $(ALLSPHINXOPTS) $(BUILDDIR)/latex
 	cd $(BUILDDIR)/latex && make all-pdf &&	cp GFFutils.pdf ../../../README.pdf	
+	python rst2wiki.py < source/overview.rst > Home.wiki
+
+wiki:
+	python rst2wiki.py < source/overview.rst > Home.wiki
+
+upload:
+	rm -r wiki
+	hg clone https://ryandale@bitbucket.org/ryandale/gffutils/wiki/
+	mv Home.wiki wiki
+	cd wiki && hg commit -m 'auto-update of Home.wiki' && hg push
 	
 
 changes:

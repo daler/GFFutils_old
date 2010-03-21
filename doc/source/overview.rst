@@ -1,5 +1,4 @@
-GFFutils
-========
+
 Overview
 --------
 This module is used for doing things with GFF files that are too
@@ -11,10 +10,10 @@ simple like::
     grep "gene" chr2.gff | awk '{print $1,$4,$5}'
 
 But how would you use commandline tools to get a BED file of 3' exons from
-genes longer than 5 kb?  Or how would you get the average number of
-isoforms for genes on the plus strand?  These more complex questions are
-actually quite easy to answer using :mod:`GFFutils` -- see the `Examples`_
-for how it's done.
+genes longer than 5 kb?  Or how would you get the average number of isoforms
+for genes on the plus strand?  These more complex questions are actually quite
+easy to answer using :mod:`GFFutils` -- see the **Examples** below for how it's
+done.
 
 Installation
 ------------
@@ -183,8 +182,8 @@ for that gene directly like this::
     my_favorite_feature = G['FBgn0002121']
 
 
-`GFFFeatures` in more detail
-----------------------------
+GFFFeatures in more detail
+--------------------------
 Just to make sure we're on the same page, here's the setup for this
 section::
 
@@ -229,7 +228,7 @@ or you can use the perhaps-more-convenient::
 
     gene_len = len(gene)
 
-In a :class:`GFFFeature` object, the :attr:`GFFFeature.attributes`
+In a :class:`GFFFeature` object, the :attr:`GFFFeature.attributes` 
 attribute holds all the info that was in the attributes column of your GFF
 file.  This will vary based on what was in your original GFF file.  You can
 get a list of this with::
