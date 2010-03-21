@@ -1,205 +1,7 @@
 """
-This module imports a GFF3 file into a local, file-based sqlite3 database
-(using the create_gff_db function) and provides an interface for easily
-manipulating this database in Python (using the GFFDB class). Since it uses
-local sqlite3 databases, Python 2.5 or greater is needed.
+Module for complex interaction with a GFF file.
 
-You can also use a GTF file instead (using create_gtf_db to create and
-GTFDB class for manipulation)
-
-Example usage
--------------
-Step 0: Fire up Python
-
-">>>" means at the Python prompt.
-
-Step 1: Import this code (the filename, minus the .py extension.  Assumes
-you fired up Python in the same dir as this script):
-
->>> import GFFutils
-
-Creating a database, interactively::
-    
-    # downloaded from, e.g., FlyBase
-    >>> gff_filename = '/data/annotations/dm3.gff'
-
-    # the database that will be created
-    >>> db_filename = '/data/dm3.db'
-
-    # do it! (this will take ~2 min to run)
-    >>> create_gffdb(gfffn, db_filename)
-
-
-Using the database interactively
---------------------------------
-
-Note that most of the GFFDB class methods return iterators for performance.
-In practice, you will need to either convert them to a list or iterate
-through them in a list comprehension or a for-loop.  You can also grab the
-next item in an iterator with its .next() method.  All four ways of getting
-info from an iterator are shown below in the examples.
-
-    # First, import the Python code into the interpreter (that is, you're
-    # importing this file, without the .py.  Note that it's
-    # case-sensitive):
-    >>> import GFFutils
-
-
-    # Then, set up a GFFDB object, telling it the filename of your
-    # database:
-    >>> G = GFFutils.GFFDB('mydatabase.db')
-    
-
-    # what sorts of features are in the db?
-    >>> featuretypes = list(G.features())
-    >>> print featuretypes
-
-
-    # You can feed the features_of_type() method any of the types that were
-    # found by the features() method called above.  For example, 'gene' was
-    # in the list of featuretypes, so find how many genes there are:
-    >>> ngenes = len(list(G.features_of_type('gene')))
-    >>> print ngenes
-
-
-    # Feature types not found in the db will not return an error (maybe
-    # they should, eventually?); they just don't return anything:
-    >>> ncabbages = len(list(G.features_of_type('cabbage')))
-    >>> print ncabbages  # zero cabbages.
-
-
-    # Set up an iterator that will go through all genes, but only grab the
-    # first one.  Then get its ID.
-    >>> iterator = G.features_of_type('gene')
-    >>> gene = iterator.next()
-
-
-    # the iterator returns GFFFeature objects, which print nicely
-    >>> print gene
-
-
-    # GFFFeature objects have an attribute, id
-    >>> gene_name = gene.id
-    >>> print gene_name
-
-
-    # They also have many other properties:
-    >>> print gene.start
-    >>> print gene.stop
-    >>> print gene.chr
-    >>> print gene.featuretype
-
-
-    # Already know the ID of a feature?  Get its full annotation (as
-    # described in the GFF file) with, e.g., 
-    >>> G['FBgn0002121']
-
-    # There's another property, 'attributes', which holds all the info in
-    # the attributes column of a GFF file.  This will vary based on what
-    # was in your GFF file.  You can get a list of this with 
-    >>> print gene.attributes._attrs
-
-    # and you can access any of the attributes with a dot, then the
-    # attribute name.  For example, in the GFF file I used, the above code
-    # returned:
-    ['ID', 'Name', 'Ontology_term', 'Dbxref', 'derived_computed_cyto', 'gbunit']
-
-    # So we could get the ontology terms with:
-    >>> print gene.attributes.Ontology_term
-
-    # Or the DBxref with
-    >>> print gene.attributes.Dbxref
-
-    # Which prints something like:
-    ['FlyBase:FBan0011023',
-    'FlyBase_Annotation_IDs:CG11023',
-    'GB:AE003590',
-    'GB_protein:AAO41164',
-    'GB:AI944728',
-    'GB:AJ564667',
-    ...
-    ...]
-    
-    # You can parse this info out later...parsing these into sub-attributes
-    # of a GFFFeature.Attribute object is something I haven't implemented
-    # yet...
-
-
-    # You already have enough info to generate a line for a BED-format
-    # file:
-    >>> line = '%s\t%s\t%s\t%s\t%s\t%s\n' % (gene.chr, gene.start, gene.stop, gene.id, gene.value, gene.strand)
-    >>> print line
-
-    # So you could write a BED file of all the genes like so:
-    >>> fout = open('mydatabase.bed','w')  # open a file for writing
-    >>> for i in G.features_of_type('gene'):
-    ...     line = '%s\t%s\t%s\t%s\t%s\t%s\n' % (gene.chr, gene.start, gene.stop, gene.id, gene.value, gene.strand)
-    ...     fout.write(line)
-
-    >>> fout.close()
-
-    # Here's how to find the transcripts belonging to a gene.  The
-    # children() and parents() methods need a feature ID as an argument,
-    # something that was saved above as gene_name:
-    >>> for i in G.children(gene_name):
-    ...     print i
-
-
-    # Here's how to find the exons belonging to a gene.  By default,
-    # level=1, which means a 'hierarchy distance' of 1 (direct
-    # parent/children).  level=2 is analagous to grandparent/grandchild,
-    # which is used for the relationship between genes/exons.  level=3 not
-    # currently implemented (not clear where it would be used).
-    >>> for i in G.children(gene_name, level=2):
-    ...     print i
-
-
-    # Most methods of the GFFDB object are simply doing SQL queries under
-    # the hood.  For more customization, you can perform any raw SQL you
-    # want on the database using G.execute("SQL query here").  Note that
-    # this example depends on whether the GFF file you used had chromsomes
-    # specified with a 'chr' in front (e.g., 'chr2L' instead of '2L').
-    # Tweak to your needs.  Not getting anything back?  Try playing with
-    # the numbers.
-    >>> for i in G.execute("select * from features where chrom='2L' and start < 10000"):
-    ...     print i
-
-
-    # Plot a histogram of exon lengths (assuming you have matplotlib
-    # installed)
-    >>> from matplotlib import pylab as p
-    >>> lengths = [i.stop-i.start for i in G.features_of_type('exon')]
-    >>> p.hist(lengths,bins=50, log=True)
-    >>> p.show()
-
-
-    # Exporting a refFlat entry for one gene:
-    >>> print G.refFlat(gene_name)
-
-    # Create a new file, writing a refFlat entry for each gene.  Note that
-    # the refFlat() method is set up such that it will return a None if
-    # there were no CDSs for a particular gene.  We don't want to write
-    # these to file, but do want to keep track of them.
-    #
-    # This will take a few seconds to run.
-    
-    >>> missing_cds = []
-    >>> fout = open('mydatabase.refFlat','w')
-    >>> for gene in G.features_of_type('gene'):
-    ...     rflt = G.refFlat(gene.id)
-    ...     if rflt is not None:
-    ...         fout.write(rflt)
-    ...     else:
-    ...         missing_cds.append(gene)
-
-    >>> fout.close()
-
-
-    # So, what were those genes that didn't have CDSs?  Check the first 25:
-    >>> for g in missing_cds[:25]:
-    ...     print g.attributes.Name[0]
-
-    # Ahhhhh . . . a bunch of snoRNAs, tRNAs, etc.  Makes sense!
+See https://bitbucket.org/ryandale/gffutils for source and documentation.
 """
 import os
 import sqlite3, sys, time, tempfile, os, mmap, string, copy
@@ -703,9 +505,9 @@ class Genome:
         seq = self.mmap.read(length)
 
         # Since we're reading right from the file, seq may have newlines in it.
-        # So count the number of newlines, get another, longer sequence 
-        # (longer by the first by the number of newlines) and return
-        # the new one with the newlines stripped.
+        # So count the number of newlines, get another, longer sequence (longer
+        # by the number of newlines) and return the new longer sequence with
+        # the newlines stripped.
         newlines = seq.count('\n')
         if newlines == 0:
             return seq
@@ -717,6 +519,7 @@ class Genome:
         self.mmap.seek(start)
         seq = self.mmap.read(length+newlines)
         return seq.replace('\n','')
+
 #TODO . . . stopped working here.
 def splicejunctions(genomefasta, gffdbfn, splicewidth, gene=None, transcript=None):
     """
@@ -748,8 +551,25 @@ def splicejunctions(genomefasta, gffdbfn, splicewidth, gene=None, transcript=Non
     d = {}
     if gene is not None:
         child_transcripts = G.children(gene)
+
         for child in child_transcripts:
-           pass 
+            if child.featuretype != 'mRNA':
+                continue
+            exons = [i for i in G.children(child) if i.featuretype=='exon']
+            
+            #exons should already be sorted upon return from database
+
+            for i in exons:
+                for j in exons:
+                    part1_start = i.stop - halfwidth
+                    part1_stop = i.stop
+                    part1_seq = genome.sequence(chrom,part1_start,part1_stop)
+                    part2_start = j.start
+                    part2_stop = j.start + halfwidth
+                    part2_seq = genome.sequence(chrom,part2_start,part2_stop)
+                    splice_seq = part1_seq + part2_seq
+                    
+            
 
 def splices(seqfile,gffdbfn,readlen,fout):
     """
