@@ -2,9 +2,6 @@
 
 Overview
 --------
-Documentation for this module can be found on the BitBucket wiki or in the
-``doc/build/html/index.html`` file.
-
 This module is used for doing things with GFF files that are too
 complicated for a simple ``awk`` or ``grep`` command line call.
 
@@ -16,7 +13,7 @@ simple like::
 But how would you use commandline tools to get a BED file of 3' exons from
 genes longer than 5 kb?  Or how would you get the average number of isoforms
 for genes on the plus strand?  These more complex questions are actually quite
-easy to answer using :mod:`GFFutils` -- see the **Examples** below for how it's
+easy to answer using ``GFFutils`` -- see the **Examples** below for how it's
 done.
 
 Installation
@@ -70,7 +67,7 @@ Using the database interactively
     # created above
     G = GFFutils.GFFDB('dm3.db')
     
-For performance, most of the :class:`GFFDB` class methods return iterators.
+For performance, most of the ``GFFDB`` class methods return iterators.
 In practice, you will need to either convert them to a list or iterate
 through them in a list comprehension or a for-loop.  You can also grab the
 next item in an iterator with its ``.next()`` method.  All four ways of
@@ -78,15 +75,15 @@ getting info from an iterator are shown below in the examples.
 
 Identifying what's in the database
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-What sorts of features are in the db?  The :meth:`GFFDB.features` method
+What sorts of features are in the db?  The ``GFFDB.features`` method
 returns an iterator of the featuretypes that were in the GFF file (and
 which are now in the ``featuretype`` field of the sqlite3 database, which
 this method accesses).  
 
-Most methods in a :class:`GFFDB` object return iterators for performance.
+Most methods in a ``GFFDB`` object return iterators for performance.
 
 Since this is the first example of using the iterators returned by a
-:class:`GFFDB` object, here are a few different ways to get the results
+``GFFDB`` object, here are a few different ways to get the results
 from the iterator it returns.
    
 Method 0: Convert iterator to a list::
@@ -100,7 +97,7 @@ Method 1: Use iterator in a for-loop (preferred)::
     for featuretype in featuretype_iterator:
         print featuretype
 
-Method 2: Call :meth:`next` incrementally on the iterator::
+Method 2: Call ``next()`` incrementally on the iterator::
 
     featuretype_iterator = G.features()
     featuretype_1 = featuretype_iterator.next()
@@ -148,8 +145,8 @@ the GFF file that you created your database from::
 Retrieving specific feature types
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 To retrieve just genes, just exons, or any other feature type that was in
-the GFF file, use the :meth:`GFFDB.features_of_type()` method.  This will return
-an iterator of :class:`GFFFeature` objects.  These objects are described in
+the GFF file, use the ``GFFDB.features_of_type()`` method.  This will return
+an iterator of ``GFFFeature`` objects.  These objects are described in
 more detail in another section below.
 
 ``'gene'`` was in the list of ``featuretypes`` above.  Let's
@@ -164,7 +161,7 @@ find out how many genes there were::
 
 Here's a more memory-efficient way to do the same thing.  In this method,
 we're not bringing ALL the genes into a giant list -- we'll just increment
-a counter.  Only a single :class:`GFFFeature` object is in memory at a
+a counter.  Only a single ``GFFFeature`` object is in memory at a
 time, which is the advantage of iterators . . . ::
 
     gene_count = 0
@@ -180,7 +177,7 @@ they should, eventually?); they just don't return anything::
     print ncabbages  # zero cabbages.
 
 
-Already know the ID of a feature?  Get the :class:`GFFFeature` object
+Already know the ID of a feature?  Get the ``GFFFeature`` object
 for that gene directly like this::
 
     my_favorite_feature = G['FBgn0002121']
@@ -194,21 +191,21 @@ section::
     import GFFutils
     G = GFFutils.GFFDB('dm3.db')
 
-Let's get a single :class:`GFFFeature` to work with.  Since I don't know
+Let's get a single ``GFFFeature`` to work with.  Since I don't know
 any accessions off the top of my head, let's just get the first gene in the
 iterator::
 
     genes_iterator = G.features_of_type('gene')
     gene = genes_iterator.next()
 
-:class:`GFFFeature` objects, when printed, show useful information::
+``GFFFeature`` objects, when printed, show useful information::
 
     GFFFeature gene 'FBgn0031208': chr2L:7529-9484 (+)
     #           ^          ^              ^         ^ 
     #           |          |              |         |
     # featuretype      accession   genomic coords   strand
 
-:class:`GFFFeature` objects have an attribute, ``id``, which contains the
+``GFFFeature`` objects have an attribute, ``id``, which contains the
 accession in the attributes field of the original GFF file::
 
     print gene.id
@@ -232,7 +229,7 @@ or you can use the perhaps-more-convenient::
 
     gene_len = len(gene)
 
-In a :class:`GFFFeature` object, the :attr:`GFFFeature.attributes` 
+In a ``GFFFeature`` object, the ``GFFFeature.attributes`` 
 attribute holds all the info that was in the attributes column of your GFF
 file.  This will vary based on what was in your original GFF file.  You can
 get a list of this with::
@@ -255,7 +252,7 @@ Or the DBxref for the gene with::
 
   
 You can parse this info out yourself; parsing these into sub-attributes
-of a :class:`GFFFeature.Attribute` object is something I haven't implemented
+of a ``GFFFeature.Attribute`` object is something I haven't implemented
 yet...
 
 You now know enough to be able to generate a line for a BED-format
@@ -269,8 +266,8 @@ file::
                                          gene.strand)
     print line
 
-But :class:`GFFFeature` objects have a convenience function,
-:meth:`to_bed`, which also accepts a number from 3 to 6 so you can tell it
+But ``GFFFeature`` objects have a convenience function,
+``to_bed()``, which also accepts a number from 3 to 6 so you can tell it
 how many BED fields you want returned (3 fields is the default).
 
 So you could write a BED file of all the genes like so::
@@ -288,7 +285,7 @@ Navigating the hierarchy of features
 ------------------------------------
 
 Here's how to find the transcripts belonging to a gene.  The
-:meth:`GFFFeature.children` and :meth:`GFFFeature.parents()` methods need a
+``GFFFeature.children`` and ``GFFFeature.parents()`` methods need a
 feature ID as an argument, which is stored in the :attr:`GFFFeature.id`
 attribute::
 
@@ -327,7 +324,7 @@ Exporting a refFlat entry for one gene::
     print G.refFlat(gene_name)
 
 Create a new file, writing a refFlat entry for each gene.  Note that the
-:meth:`refFlat` method is set up such that it will return ``None`` if there
+``refFlat()`` method is set up such that it will return ``None`` if there
 were no CDSs for a particular gene.  We don't want to write these to file,
 but do want to keep track of them.
 
@@ -352,7 +349,7 @@ So, what were those genes that didn't have CDSs?  Check the first 25::
 Ahhhhh . . . a bunch of snoRNAs, tRNAs, etc.  Makes sense!
 
 
-:class:`GFFFeatures` have a :meth:`GFFFeature.tostring` method which prints
+``GFFFeatures`` have a ``GFFFeature.tostring()`` method which prints
 back the GFF file entry as a string (with the newline included).  This
 makes it very easy to write new GFF files containing a subset of the
 features in the original GFF file::
@@ -425,24 +422,6 @@ Average exon count
     print mean_exon_count
 
 
-BED file of 3' exons from genes longer than 5 kb
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-::
-    
-    fout = open('3prime-exons.bed','w')
-    fout.write('track name="3-prime exons\n"')
-    for gene in G.features_of_type('gene'):
-        if len(gene) < 5000:
-            continue
-        children = [i for i in G.children(gene.id,2) if i.featuretype=='exon']
-        if gene.strand == '+':
-            three_prime_exon = children[0]
-        else:
-            three_prime_exon = children[-1]
-        fout.write(three_prime_exon.to_bed())
-    fout.close()
-
-    
 Histogram of exon lengths
 ~~~~~~~~~~~~~~~~~~~~~~~~~
 (Assumes you have matplotlib installed)
@@ -469,39 +448,4 @@ Average number of isoforms for genes on plus strand
         gene_count += 1
     mean_isoform_count = float(isoform_count) / gene_count
 
-Constituitively expressed exons
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-The trick here is that if all of a gene's isoforms are found in the list of
-parents of an exon, then that exon is found in all isoforms of that gene.
-
-::
-    
-    fout = open('constituitively-expressed-exons.gff','w')
-    for gene in G.features_of_type('gene'):
-        const_expr_exons = []
-        isoforms = [i for i in G.children(gene.id) if i.featuretype=='mRNA']
-        isoform_ids = [i.id for i in isoforms]
-        children = G.children(gene.id,level=2)
-        for child in children:
-            if child.featuretype != 'exon':
-                continue
-            exon_transcript_parent_ids = [i.id for i in G.parents(exon.id,level=1) if i.featuretype=='mRNA']
-            
-            # check to make sure each of the gene's isoforms are in this exon.
-            in_all_isoforms = True
-            for i_id in isoform_ids:
-                if i_id not in exon_transcript_parent_ids:
-                    in_all_isoforms = False
-            if in_all_isoforms:
-                const_expr_exons.append(child)
-
-        if len(const_expr_exons) > 0:
-            fout.write(gene.tostring())
-            for isoform in isoforms:
-                fout.write(isoform.tostring())
-            for exon in const_expr_exons:
-                fout.write(exon.tostring())
-    fout.close()
-                    
             
