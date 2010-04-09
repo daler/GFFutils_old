@@ -15,8 +15,14 @@ simple like::
 But how would you use commandline tools to get a BED file of 3' exons from
 genes longer than 5 kb?  Or how would you get the average number of isoforms
 for genes on the plus strand?  These more complex questions are actually quite
-easy to answer using ``GFFutils`` -- see the **Examples** below for how it's
-done.
+easy to answer using ``GFFutils``. 
+
+A by-product of structuring a GFF file in this way is that it is easy to
+convert to something like a refFlat format -- use the ``GFFDB.refFlat()``
+method for this.
+
+See the **Examples** below to jump right in, done, or follow along for a
+step-by-step introduction.
 
 Installation
 ------------
@@ -140,8 +146,8 @@ featuretype is in memory at one time.  This is not too important for
 iterating through featuretypes (of which there are usually <50; typically
 3-10).  But when you want to iterate through 15,000 genes it can be useful.
 
-In any case, we get something like the following.  This depends entirely on
-the GFF file that you created your database from::
+In any case, we get something like the following.  What you see on your screen
+depends entirely on the GFF file that you created your database from::
     
     ['BAC_cloned_genomic_insert',
      'CDS',
@@ -174,39 +180,42 @@ the GFF file, use the ``GFFDB.features_of_type()`` method.  This will return
 an iterator of ``GFFFeature`` objects.  These objects are described in
 more detail in another section below.
 
-``'gene'`` was in the list of ``featuretypes`` above.  Let's
-find out how many genes there were::
-    
-    gene_iterator = G.features_of_type('gene')
-
-    # convert iterator to list so we can get a length
-    gene_list = list(gene_iterator)
-
-    print len(gene_list)
-
-Here's a more memory-efficient way to do the same thing.  In this method,
-we're not bringing ALL the genes into a giant list -- we'll just increment
-a counter.  Only a single ``GFFFeature`` object is in memory at a
-time, which is the advantage of iterators . . . ::
+``'gene'`` was in the list of ``featuretypes`` above.  Let's find out how many
+genes there were. In this method, we're not bringing ALL the genes into a giant
+list -- we'll just increment a counter.  Only a single ``GFFFeature`` object is
+in memory at a time, which is the advantage of iterators . . . ::
 
     gene_count = 0
     for gene in G.features_of_type('gene'):
         gene_count += 1
     print gene_count
     
+This is something I found myself doing quite often, so there's a shortcut method
+that just does a ``count()`` in the SQL directly.  Use it like this::
+
+    gene_count = G.count_features_of_type('gene')
 
 Feature types not found in the db will not return an error (maybe
 they should, eventually?); they just don't return anything::
 
-    ncabbages = len(list(G.features_of_type('cabbage')))
+    ncabbages = G.count_features_of_type('cabbage')
     print ncabbages  # zero cabbages.
-
 
 Already know the ID of a feature?  Get the ``GFFFeature`` object
 for that gene directly like this::
 
     my_favorite_feature = G['FBgn0002121']
 
+I found myself getting a gene to play around with by doing this::
+
+    g = G.features_of_type('gene').next()
+
+However, this always returns the same gene.  For better testing, there's a
+``random_feature()`` method that chooses a random feature out of the database.
+You can specify a featuretype if you'd like; otherwise you have a chance of
+getting any feature that was in the GFF file::
+
+    g = G.random_feature('gene')
 
 GFFFeatures in more detail
 --------------------------
@@ -216,12 +225,9 @@ section::
     import GFFutils
     G = GFFutils.GFFDB('dm3.db')
 
-Let's get a single ``GFFFeature`` to work with.  Since I don't know
-any accessions off the top of my head, let's just get the first gene in the
-iterator::
+Let's get a single ``GFFFeature`` to work with::
 
-    genes_iterator = G.features_of_type('gene')
-    gene = genes_iterator.next()
+    gene = G.random_feature('gene')
 
 ``GFFFeature`` objects, when printed, show useful information::
 
@@ -261,9 +267,9 @@ get a list of this with::
     
     print gene.attributes._attrs
 
-and you can access any of the attributes with a dot, then the
-attribute name.  For example, in the GFF file I used, the above code
-returned::
+and you can access any of the attributes with a dot, then the attribute name.
+For example, in the GFF file I used, the above code returned the following
+available attributes::
 
     ['ID', 'Name', 'Ontology_term', 'Dbxref', 'derived_computed_cyto', 'gbunit']
 
@@ -271,20 +277,20 @@ So we could get the ontology terms for this gene with::
 
     print gene.attributes.Ontology_term
 
-Or the DBxref for the gene with::
+which shows something like::
+
+    ['SO:0000010', 'SO:0000087', 'GO:0008234', 'GO:0006508']   
+
+Or the DBxref (database cross-reference) for the gene with::
 
     print gene.attributes.Dbxref
 
   
-You can parse this info out yourself; parsing these into sub-attributes
-of a ``GFFFeature.Attribute`` object is something I haven't implemented
-yet...
-
-You now know enough to be able to generate a line for a BED-format
-file::
+You now know enough to be able to generate a line for a BED-format file (note
+subtracting 1 from the start to convert to BED format's zero-based start)::
 
     line = '%s\t%s\t%s\t%s\t%s\t%s\n' % (gene.chr, 
-                                         gene.start, 
+                                         gene.start-1, 
                                          gene.stop, 
                                          gene.id, 
                                          gene.value, 
