@@ -811,9 +811,10 @@ def create_gffdb(gfffn, dbfn):
                             value float, 
                             source text,
                             phase text,
-                            attributes text
+                            attributes text,
+                            primary key (id)
                           );
-    CREATE TABLE relations (parent text, child text, level int);
+    CREATE TABLE relations (parent text, child text, level int, primary key(parent,child,level) );
     ''')
 
     # Parse the GFF file, populating the features tables and the relations table.
@@ -848,13 +849,14 @@ def create_gffdb(gfffn, dbfn):
                    feature._strattributes))
 
         try:
-            parent = feature.attributes.Parent[0]
+            parents = feature.attributes.Parent
             child = feature.id
         except AttributeError: 
             continue
 
         # add the first-level parent relation
-        c.execute('INSERT INTO relations VALUES (?,?,?)', (parent, child, 1))
+        for parent in parents:
+            c.execute('INSERT INTO relations VALUES (?,?,?)', (parent, child, 1))
     
     # show how much time it took
     t1 = time.time()
@@ -892,13 +894,16 @@ def create_gffdb(gfffn, dbfn):
     tmp = tempfile.mktemp()
     fout = open(tmp,'w')
     for parent in c:
-        parent = parent[0]
+        parent = parent[0] # first thing in the list is the ID
         counter += 1
         perc_done = int(counter / nlines * 100)
         if perc_done != last_perc:
             print '\rquerying database for grandchildren: %s%%'%perc_done,
             sys.stdout.flush()
         last_perc = perc_done    
+
+        # Here we get the first-level child from the initial import.   This
+        # data is contained in the "Parent=" attribute of each GFF feature.
         c2.execute('select child from relations where parent = ? and level=1',(parent,))
         for child in c2:
             child = child[0]
@@ -923,7 +928,7 @@ def create_gffdb(gfffn, dbfn):
             sys.stdout.flush()
         last_perc = perc_done
         parent,child = line.strip().split('\t')
-        c.execute('insert into relations values (?,?,?)', (parent, child, 2))
+        c.execute('insert or ignore into relations values (?,?,?)', (parent, child, 2))
     t1 = time.time()
     print '(%ds)' % (t1-t0)
     t0 = time.time()
@@ -1275,6 +1280,11 @@ class GFFDB:
         Returns the closest TSS feature to the coordinate. Strand optional.  
         """
         #XXX TODO: need to flesh this out; currently sorta barebones
+        #
+        # For example:
+        # If you use a gene's TSS as *pos*, how best to not return that gene?
+        # On one hand it would be a useful identity check, but on the other you
+        # probably don't usually want the same gene returned.
 
         c = self.conn.cursor()
         c.execute('''
