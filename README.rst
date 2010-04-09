@@ -1,3 +1,5 @@
+.. contents::
+
 Overview
 --------
 Documentation for this module can be found on the BitBucket wiki or in the
