@@ -38,7 +38,7 @@ step again.
 The database will take roughly twice as much hard drive space as the
 original text file.  This is the cost of interactivity and fast lookups.
 
-::
+From either a Python script or a Python shell::
 
     import GFFutils
     
@@ -54,12 +54,33 @@ original text file.  This is the cost of interactivity and fast lookups.
 Now ``dm3.db`` is the sqlite3 database that can be used in all sorts of
 weird and wonderful ways, outlined below.
 
+For power users, you can of course work on the database directly. Here's the
+schema::
+
+    CREATE TABLE features (
+                                id text, 
+                                chrom text, 
+                                start int, 
+                                stop int, 
+                                strand text,
+                                featuretype text,
+                                value float, 
+                                source text,
+                                phase text,
+                                attributes text,
+                                primary key (id)
+                              );
+    CREATE TABLE relations (parent text, child text, level int, primary key(parent,child,level) );
+    CREATE INDEX childindex on relations (child);
+    CREATE INDEX ids ON features (id);
+    CREATE INDEX parentindex on relations (parent);
+    CREATE INDEX starts on features(start);
+    CREATE INDEX stops on features(stop);
+
 
 Using the database interactively
 --------------------------------
-
-
-::
+First, wrap your new database in a ``GFFDB`` object::
 
     import GFFutils
 
@@ -67,11 +88,13 @@ Using the database interactively
     # created above
     G = GFFutils.GFFDB('dm3.db')
     
-For performance, most of the ``GFFDB`` class methods return iterators.
-In practice, you will need to either convert them to a list or iterate
-through them in a list comprehension or a for-loop.  You can also grab the
-next item in an iterator with its ``.next()`` method.  All four ways of
-getting info from an iterator are shown below in the examples.
+.. note::
+   
+    For performance, most of the ``GFFDB`` class methods return iterators.  In
+    practice, you will need to either convert them to a list or iterate through
+    them in a list comprehension or a for-loop.  You can also grab the next item
+    in an iterator with its ``.next()`` method.  All four ways of getting info
+    from an iterator are shown below in the examples.
 
 Identifying what's in the database
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
