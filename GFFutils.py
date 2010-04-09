@@ -1303,13 +1303,10 @@ class GFFDB:
         AND strand = "-"
         ORDER BY AAA
         ''' % pos, (featuretype,chrom))
-        closest_minus = c.fetchone()
-    
+        closest_minus = c.fetchone() 
         both = [closest_minus,closest_plus]
         both.sort()
         return both[0]
-
-
 
     def gene_unique_features(self,id):
         '''
@@ -1876,6 +1873,32 @@ class GFFDB:
                                               attributes=None)
         promoter.add_attribute('ID','promoter:'+feature.id)
         return promoter
+
+    def random_feature(self,featuretype=None):
+        """
+        Chooses a random feature from the database.  Useful for testing or
+        experimenting with the module.  Specify a *featuretype* to restrict results
+        to that feature type.
+        
+        Idea from here:
+            
+            http://www.mail-archive.com/sqlite-users@sqlite.org/msg14657.html
+        """
+
+        c = self.conn.cursor()
+        featuretype_clause = ''
+        if featuretype is not None:
+            featuretype_clause = 'featuretype = "%s" AND ' % featuretype
+        c.execute('''
+        SELECT chrom, source, featuretype, start, stop, value, strand, phase, attributes 
+        FROM features
+        WHERE 
+        %s
+        rowid >= abs(random()) %% (SELECT MAX(rowid) FROM features) LIMIT 1
+        ''' % featuretype_clause)
+        results = c.fetchone()
+        return self.__class__.featureclass(*results)
+        
 
 class GTFDB(GFFDB):
     featureclass = GTFFeature
