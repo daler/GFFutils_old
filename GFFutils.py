@@ -1304,7 +1304,6 @@ class GFFDB:
                 ignore = [ignore]
             for i in ignore:
                 ignore_clause += ' AND id != "%s" ' % i
-        print ignore_clause
         if (strand is None) and (direction is not None):
             raise ValueError, 'Strand must be specified if direction is specified'
 
