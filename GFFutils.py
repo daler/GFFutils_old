@@ -167,7 +167,24 @@ class GFFFeature(object):
 
     def __len__(self):
         return self.stop-self.start
+   
+    @property
+    def TSS(self):
+        """The transcription start site of the feature.  This is simply the
+        strand-specific start of the feature.  Returns None if no strand
+        specified.
+        """
+        if self.strand == '+':
+            return self.start
+        if self.strand == '-':
+            return self.stop
     
+    @property
+    def midpoint(self):
+        """Convenience accessor for getting the midpoint of a feature.
+        """
+        return self.start + (self.stop-self.start)/2
+
     def tostring(self):
         """Prints the GFF record suitable for writing to file (newline included).
         
@@ -1275,38 +1292,156 @@ class GFFDB:
         for i in c:
             yield self.__class__.featureclass(*i)
 
-    def closest_feature(self, chrom, pos, featuretype='gene', strand=None):
+    def closest_feature(self, chrom, pos, featuretype='gene', strand=None, ignore=None, direction=None):
         """
         Returns the closest TSS feature to the coordinate. Strand optional.  
         """
-        #XXX TODO: need to flesh this out; currently sorta barebones
-        #
-        # For example:
-        # If you use a gene's TSS as *pos*, how best to not return that gene?
-        # On one hand it would be a useful identity check, but on the other you
-        # probably don't usually want the same gene returned.
+        
+        # e.g., AND id != FBgn0001 AND id != FBgn0002
+        ignore_clause = ''
+        if ignore is not None:
+            if type(ignore) is str:
+                ignore = [ignore]
+            for i in ignore:
+                ignore_clause += ' AND id != "%s" ' % i
+        print ignore_clause
+        if (strand is None) and (direction is not None):
+            raise ValueError, 'Strand must be specified if direction is specified'
 
-        c = self.conn.cursor()
-        c.execute('''
-        SELECT abs(start-%s) as AAA,id FROM features WHERE
-        featuretype = ?
-        AND chrom = ?
-        AND strand = "+"
-        ORDER BY AAA
-        ''' % pos, (featuretype,chrom))
-        closest_plus = c.fetchone()
+        # Mini-examples above each query show the position as an "x" and
+        # promoters to indicate genes on (+) or (-) strands
 
-        c.execute('''
-        SELECT abs(stop-%s) as AAA,id FROM features WHERE
-        featuretype = ?
-        AND chrom = ?
-        AND strand = "-"
-        ORDER BY AAA
-        ''' % pos, (featuretype,chrom))
-        closest_minus = c.fetchone() 
-        both = [closest_minus,closest_plus]
-        both.sort()
-        return both[0]
+        #  ---->                ----->
+        #  |               X    |
+        #  ^ finds this one
+        if strand == '+' and direction == 'upstream':
+            c = self.conn.cursor()
+            c.execute('''
+            SELECT (%s-start) as AAA,id FROM features 
+            WHERE featuretype = ?
+            AND chrom = ?
+            AND strand = "+"
+            AND start < ?
+            %s
+            ORDER BY AAA
+            ''' % (pos, ignore_clause), (featuretype,chrom,pos))
+            closest = c.fetchone()
+            return closest
+        
+        #  ---->                 ----->
+        #  |       X             |
+        #                        ^ finds this one
+        if strand == '+' and direction == 'downstream':
+            c = self.conn.cursor()
+            c.execute('''
+            SELECT (start-%s) as AAA,id FROM features 
+            WHERE featuretype = ?
+            AND chrom = ?
+            AND strand = "+"
+            AND start > ?
+            %s
+            ORDER BY AAA
+            ''' % (pos, ignore_clause), (featuretype,chrom,pos))
+            closest = c.fetchone()
+            return closest
+
+        #  <----                   <----
+        #      |    X                  |
+        #                              ^ finds this one
+        if strand == '-' and direction == 'upstream':
+            c = self.conn.cursor()
+            c.execute('''
+            SELECT (stop-%s) as AAA,id FROM features 
+            WHERE featuretype = ?
+            AND chrom = ?
+            AND strand = "-"
+            AND stop > ?
+            %s
+            ORDER BY AAA
+            ''' % (pos, ignore_clause), (featuretype,chrom,pos))
+            closest = c.fetchone()
+            return closest
+
+        #  <----               <----
+        #      |           X       |
+        #      ^ finds this one
+        if strand == '-' and direction == 'downstream':
+            c = self.conn.cursor()
+            c.execute('''
+            SELECT (%s-stop) as AAA,id FROM features 
+            WHERE featuretype = ?
+            AND chrom = ?
+            AND strand = "-"
+            AND stop < ?
+            %s
+            ORDER BY AAA
+            ''' % (pos, ignore_clause), (featuretype,chrom,pos))
+            closest = c.fetchone()
+            return closest
+
+        if direction is None:
+            #  ---->     <--         ---->
+            #  |           |   X     |
+            #                        ^ finds this one
+            if strand == '+':
+                c = self.conn.cursor()
+                c.execute('''
+                SELECT abs(start-%s) as AAA,id FROM features 
+                WHERE featuretype = ?
+                AND chrom = ?
+                AND strand = "+"
+                %s
+                ORDER BY AAA
+                ''' % (pos, ignore_clause), (featuretype,chrom))
+                closest = c.fetchone()
+                return closest
+
+            #  <----     --->  <----
+            #      |     |   X     |
+            #                      ^ finds this one
+            if strand == '-':
+                c.execute('''
+                SELECT abs(stop-%s) as AAA,id FROM features
+                WHERE featuretype = ?
+                AND chrom = ?
+                AND strand = "-"
+                %s
+                ORDER BY AAA
+                ''' % (pos, ignore_clause), (featuretype,chrom))
+                closest = c.fetchone() 
+                return closest
+
+
+            # If strand not specified, then find the closest one on either strand
+            #  <----             -->      <----
+            #      |         X   |            |
+            #                    ^ finds this one
+            if strand is None:
+                c = self.conn.cursor()
+                c.execute('''
+                SELECT abs(start-%s) as AAA,id FROM features 
+                WHERE featuretype = ?
+                AND chrom = ?
+                AND strand = "+"
+                %s
+                ORDER BY AAA
+                ''' % (pos, ignore_clause), (featuretype,chrom))
+                closest_plus = c.fetchone()
+
+                c.execute('''
+                SELECT abs(stop-%s) as AAA,id FROM features
+                WHERE featuretype = ?
+                AND chrom = ?
+                AND strand = "-"
+                %s
+                ORDER BY AAA
+                ''' % (pos, ignore_clause), (featuretype,chrom))
+                closest_minus = c.fetchone() 
+                both = [closest_minus,closest_plus]
+                both.sort()
+                return both[0]
+
+
 
     def gene_unique_features(self,id):
         '''
