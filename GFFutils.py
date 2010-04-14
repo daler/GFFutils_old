@@ -958,6 +958,9 @@ def create_gffdb(gfffn, dbfn):
     c.execute('create index childindex on relations (child)')
     c.execute('create index starts on features(start)')
     c.execute('create index stops on features(stop)')
+    c.execute('create index startstrand on features(start, strand)')
+    c.execute('create index stopstrand on features(stop,strand)')
+    c.execute('create index featuretypes on features(featuretype)')
     print '\rre-creating indexes: 100%',
     sys.stdout.flush()
     conn.commit()
@@ -1316,13 +1319,12 @@ class GFFDB:
         if strand == '+' and direction == 'upstream':
             c = self.conn.cursor()
             c.execute('''
-            SELECT (%s-start) as AAA,id FROM features 
+            SELECT min(%s-start) as AAA,id FROM features 
             WHERE featuretype = ?
             AND chrom = ?
             AND strand = "+"
             AND start < ?
             %s
-            ORDER BY AAA
             ''' % (pos, ignore_clause), (featuretype,chrom,pos))
             closest = c.fetchone()
             return closest
@@ -1333,13 +1335,12 @@ class GFFDB:
         if strand == '+' and direction == 'downstream':
             c = self.conn.cursor()
             c.execute('''
-            SELECT (start-%s) as AAA,id FROM features 
+            SELECT min(start-%s) as AAA,id FROM features 
             WHERE featuretype = ?
             AND chrom = ?
             AND strand = "+"
             AND start > ?
             %s
-            ORDER BY AAA
             ''' % (pos, ignore_clause), (featuretype,chrom,pos))
             closest = c.fetchone()
             return closest
@@ -1350,13 +1351,12 @@ class GFFDB:
         if strand == '-' and direction == 'upstream':
             c = self.conn.cursor()
             c.execute('''
-            SELECT (stop-%s) as AAA,id FROM features 
+            SELECT min(stop-%s) as AAA,id FROM features 
             WHERE featuretype = ?
             AND chrom = ?
             AND strand = "-"
             AND stop > ?
             %s
-            ORDER BY AAA
             ''' % (pos, ignore_clause), (featuretype,chrom,pos))
             closest = c.fetchone()
             return closest
@@ -1367,13 +1367,12 @@ class GFFDB:
         if strand == '-' and direction == 'downstream':
             c = self.conn.cursor()
             c.execute('''
-            SELECT (%s-stop) as AAA,id FROM features 
+            SELECT min(%s-stop) as AAA,id FROM features 
             WHERE featuretype = ?
             AND chrom = ?
             AND strand = "-"
             AND stop < ?
             %s
-            ORDER BY AAA
             ''' % (pos, ignore_clause), (featuretype,chrom,pos))
             closest = c.fetchone()
             return closest
@@ -1385,12 +1384,11 @@ class GFFDB:
             if strand == '+':
                 c = self.conn.cursor()
                 c.execute('''
-                SELECT abs(start-%s) as AAA,id FROM features 
+                SELECT min(abs(start-%s)) as AAA,id FROM features 
                 WHERE featuretype = ?
                 AND chrom = ?
                 AND strand = "+"
                 %s
-                ORDER BY AAA
                 ''' % (pos, ignore_clause), (featuretype,chrom))
                 closest = c.fetchone()
                 return closest
@@ -1400,12 +1398,11 @@ class GFFDB:
             #                      ^ finds this one
             if strand == '-':
                 c.execute('''
-                SELECT abs(stop-%s) as AAA,id FROM features
+                SELECT min(abs(stop-%s)) as AAA,id FROM features
                 WHERE featuretype = ?
                 AND chrom = ?
                 AND strand = "-"
                 %s
-                ORDER BY AAA
                 ''' % (pos, ignore_clause), (featuretype,chrom))
                 closest = c.fetchone() 
                 return closest
@@ -1418,29 +1415,25 @@ class GFFDB:
             if strand is None:
                 c = self.conn.cursor()
                 c.execute('''
-                SELECT abs(start-%s) as AAA,id FROM features 
+                SELECT min(abs(start-%s)) as AAA,id FROM features 
                 WHERE featuretype = ?
                 AND chrom = ?
                 AND strand = "+"
                 %s
-                ORDER BY AAA
                 ''' % (pos, ignore_clause), (featuretype,chrom))
                 closest_plus = c.fetchone()
 
                 c.execute('''
-                SELECT abs(stop-%s) as AAA,id FROM features
+                SELECT min(abs(stop-%s)) as AAA,id FROM features
                 WHERE featuretype = ?
                 AND chrom = ?
                 AND strand = "-"
                 %s
-                ORDER BY AAA
                 ''' % (pos, ignore_clause), (featuretype,chrom))
                 closest_minus = c.fetchone() 
                 both = [closest_minus,closest_plus]
                 both.sort()
                 return both[0]
-
-
 
     def gene_unique_features(self,id):
         '''
