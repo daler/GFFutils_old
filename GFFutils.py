@@ -1,7 +1,7 @@
 """
 Module for complex interaction with a GFF file.
 
-See https://bitbucket.org/ryandale/gffutils for source and documentation.
+See http://github.com/daler/GFFutils for source and documentation.
 """
 import os
 import sqlite3, sys, time, tempfile, os, mmap, string, copy
