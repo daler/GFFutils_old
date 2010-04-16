@@ -501,21 +501,21 @@ For example, say we have the following GFF line::
 
     chr2L FlyBase exon 8668 9276 .  + 0 ID=exon_1;Parent=mRNA_1
 
-It will be entered into the ``features`` table like this
+It will be entered into the ``features`` table like this::
 
-====== ===== ======= ==== ===== ===== ===== ====== ===== =======================
-ID     chrom source  type start stop  value strand phase attributes
-====== ===== ======= ==== ===== ===== ===== ====== ===== =======================
-exon_1 chr2L FlyBase CDS  8668  9276  .     +      0     ID=exon_1;mRNA_1
-====== ===== ======= ==== ===== ===== ===== ===== ====== =======================
+    ====== ===== ======= ==== ===== ===== ===== ====== ===== =======================
+    ID     chrom source  type start stop  value strand phase attributes
+    ====== ===== ======= ==== ===== ===== ===== ====== ===== =======================
+    exon_1 chr2L FlyBase CDS  8668  9276  .     +      0     ID=exon_1;mRNA_1
+    ====== ===== ======= ==== ===== ===== ===== ===== ====== =======================
 
-Since this CDS has an annotated parent, this relationship is entered into the ``relations`` table:
+Since this CDS has an annotated parent, this relationship is entered into the ``relations`` table::
 
-======= ======= =====
-parent  child   level
-======= ======= =====
-mRNA_1  exon_1  1
-======= ======= =====
+    ======= ======= =====
+    parent  child   level
+    ======= ======= =====
+    mRNA_1  exon_1  1
+    ======= ======= =====
 
 Note that we can't assign any second-order parents.  On this first pass, we can
 only add first-order parents because that's the only information that's
@@ -525,23 +525,23 @@ At some point in the GFF file though, the parent transcript is found::
 
     chr2L FlyBase mRNA 7529 9484 . + . ID=mRNA_1;Parent=gene_1
 
-...and we import it into the ``features`` table:
+...and we import it into the ``features`` table::
 
-====== ===== ======= ==== ===== ===== ===== ====== ===== =======================
-ID     chrom source  type start stop  value strand phase attributes
-====== ===== ======= ==== ===== ===== ===== ====== ===== =======================
-exon_1 chr2L FlyBase CDS  8668  9276  .     +      0     ID=exon_1;mRNA_1
-mRNA_1 chr2L FlyBase mRNA 7529  9484  .     +      .     ID=mRNA_1;Parent=gene_1
-====== ===== ======= ==== ===== ===== ===== ===== ====== =======================
+    ====== ===== ======= ==== ===== ===== ===== ====== ===== =======================
+    ID     chrom source  type start stop  value strand phase attributes
+    ====== ===== ======= ==== ===== ===== ===== ====== ===== =======================
+    exon_1 chr2L FlyBase CDS  8668  9276  .     +      0     ID=exon_1;mRNA_1
+    mRNA_1 chr2L FlyBase mRNA 7529  9484  .     +      .     ID=mRNA_1;Parent=gene_1
+    ====== ===== ======= ==== ===== ===== ===== ===== ====== =======================
 
-as well as the ``relations`` table:
+as well as the ``relations`` table::
 
-======= ======= =====
-parent  child   level
-======= ======= =====
-mRNA_1  exon_1  1
-gene_1  mRNA_1  1
-======= ======= =====
+    ======= ======= =====
+    parent  child   level
+    ======= ======= =====
+    mRNA_1  exon_1  1
+    gene_1  mRNA_1  1
+    ======= ======= =====
 
 ...and these tables continue to grow as the GFF file is parsed.  When this
 first pass is done, indexes are created to speed up searching in the second
@@ -558,15 +558,15 @@ parent (mRNA_1).  Then we take that parent and get *it's* parent by looking for 
 and then grabbing its parent (gene_1).
 
 Now we know that gene_1 is the "grandparent" of exon_1, and we can enter it
-into the ``relations`` table as a parent of level 2:
+into the ``relations`` table as a parent of level 2::
 
-======= ======= =====
-parent  child   level
-======= ======= =====
-mRNA_1  exon_1  1
-gene_1  mRNA_1  1
-gene_1  exon_1  2
-======= ======= =====
+    ======= ======= =====
+    parent  child   level
+    ======= ======= =====
+    mRNA_1  exon_1  1
+    gene_1  mRNA_1  1
+    gene_1  exon_1  2
+    ======= ======= =====
 
 In practice, the results of the "parent search" are written to a temporary text
 file and then imported into the ``relations`` table as a batch in the end.
