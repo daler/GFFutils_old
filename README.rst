@@ -503,11 +503,11 @@ For example, say we have the following GFF line::
 
 It will be entered into the ``features`` table like this
 
-====== ===== ======= =========== ==== ===== ===== ====== ===== =================
-ID     chrom source  featuretype start stop value strand phase attributes
-====== ===== ======= =========== ==== ===== ===== ====== ===== =================
-exon_1 chr2L FlyBase CDS         8668 9276  .     +      0     ID=exon_1;mRNA_1
-====== ===== ======= =========== ==== ===== ===== ====== ===== =================
+====== ===== ======= ==== ===== ===== ===== ====== ===== =======================
+ID     chrom source  type start stop  value strand phase attributes
+====== ===== ======= ==== ===== ===== ===== ====== ===== =======================
+exon_1 chr2L FlyBase CDS  8668  9276  .     +      0     ID=exon_1;mRNA_1
+====== ===== ======= ==== ===== ===== ===== ===== ====== =======================
 
 Since this CDS has an annotated parent, this relationship is entered into the ``relations`` table:
 
@@ -527,12 +527,12 @@ At some point in the GFF file though, the parent transcript is found::
 
 ...and we import it into the ``features`` table:
 
-====== ===== ======= =========== ==== ===== ===== ====== ===== =======================
-ID     chrom source  featuretype start stop value strand phase attributes
-====== ===== ======= =========== ==== ===== ===== ====== ===== =======================
-exon_1 chr2L FlyBase CDS         8668 9276  .     +      0     ID=exon_1;mRNA_1
-mRNA_1 chr2L FlyBase mRNA        7529 9484  .     +      .     ID=mRNA_1;Parent=gene_1
-====== ===== ======= =========== ==== ===== ===== ====== ===== =======================
+====== ===== ======= ==== ===== ===== ===== ====== ===== =======================
+ID     chrom source  type start stop  value strand phase attributes
+====== ===== ======= ==== ===== ===== ===== ====== ===== =======================
+exon_1 chr2L FlyBase CDS  8668  9276  .     +      0     ID=exon_1;mRNA_1
+mRNA_1 chr2L FlyBase mRNA 7529  9484  .     +      .     ID=mRNA_1;Parent=gene_1
+====== ===== ======= ==== ===== ===== ===== ===== ====== =======================
 
 as well as the ``relations`` table:
 
