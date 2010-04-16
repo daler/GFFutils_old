@@ -1443,57 +1443,7 @@ class GFFDB:
                 both.sort()
                 return both[0]
 
-    def gene_unique_features(self,id):
-        '''
-        Returns a list of (start,stop) tuples of merged exons that overlap the
-        coordinates of a gene.  Useful for when you're trying to figure out if
-        a library contains spliced reads or not, and want to classify reads
-        based on whether they are in ANY exon or ANY intron.
-
-        This can take a while, since the database structure is not optimized
-        for this kind of task.
-        '''
-        # Get the GFFFeature of the gene
-        feature = self[id]
-        if feature.featuretype != 'gene':
-            raise NotImplementedError,'not sure how to deal with non-genes yet'
-        
-        # Any exons for ANY gene within range of this gene?
-        c = self.conn.cursor()
-        c.execute('''SELECT start,stop 
-                     FROM features WHERE
-                     featuretype != 'gene' AND
-                     featuretype != 'mRNA' AND
-                     featuretype != 'transcript' AND
-                     chrom = ? AND 
-                     (start BETWEEN ? AND ? 
-                     OR 
-                     stop BETWEEN ? AND ?)
-                     ORDER BY start
-        ''', (feature.chr, feature.start, feature.stop, feature.start, feature.stop))
-        
-        # Iterate through 'em.  You at least ought to have the children of the gene.
-        for i,exon in enumerate(c):
-            start,stop = exon
-            if i == 0: # use the first exon to set up the initial merged exon.
-                if start <= feature.start:
-                    merged_exon_start = feature.start
-                else:
-                    merged_exon_start = start
-                merged_exon_stop = stop
-                continue # and move along.
-            if (start <= merged_exon_stop+1): # another exon starts within the merged exon
-                if (stop >= feature.stop): # if it stops outside of the gene (or it's the last exon of a gene)...
-                    yield (merged_exon_start, feature.stop) # ...only return up to the boundary of the gene.
-                    raise StopIteration # and we're done.
-                merged_exon_stop = stop # otherwise, extend the merged exon
-            else: # start is outside the range of the merged exon
-                yield (merged_exon_start, merged_exon_stop) # so we can yield the merged exon
-                merged_exon_stop = stop # and start a new merged exon
-                merged_exon_start = start #
-        yield (merged_exon_start, merged_exon_stop) # don't forget to yield the last one!
-
-    def overlapping_features(self,id,featuretype=None,ignore_strand=False, completely_within=False):
+    def overlapping_features(self,chrom,start,stop,featuretype=None,strand=None, completely_within=False):
         """
         Returns an iterator of features of type *featuretype* that overlap the
         feature with ID *id*. If *featuretype* is None (default), then all
@@ -1508,43 +1458,31 @@ class GFFDB:
         on either side will be included as well.
         """
         
-        feature = self[id]
-        if ignore_strand:
+        if strand is None:
             strand_clause = ''
         else:
-            strand_clause = ' AND strand = "%s"' % feature.strand
+            strand_clause = ' AND strand = "%s"' % strand
         
-        #featuretype_clause = ''
-        #if featuretype is not None:
-        featuretype_clause = ' AND featuretype = "%s"' % featuretype
+        featuretype_clause = ''
+        if featuretype is not None:
+            featuretype_clause = ' AND featuretype = "%s"' % featuretype
 
         if completely_within:
-            within_clause = ' AND start >= %s AND stop <= %s' % (feature.start,feature.stop)
+            within_clause = ' AND ((start BETWEEN %s AND %s) AND (stop BETWEEN %s AND %s))' % (start,stop, start,stop)
         else:
-            within_clause = ' AND ((start BETWEEN %s AND %s) OR (stop BETWEEN %s AND %s))' % (feature.start,feature.stop, feature.start,feature.stop)
+            within_clause = ' AND start <= %s AND stop >= %s' % (stop,start)
         c = self.conn.cursor()
-        c2 = self.conn.cursor()
-        c.execute('DROP VIEW IF EXISTS tmpstart')
-        c.execute('DROP VIEW IF EXISTS tmpstop')
-        query = '''
-        CREATE VIEW tmp%s AS 
-        SELECT chrom, source, featuretype, start, stop, value, strand, phase, attributes
-        FROM features WHERE
-        chrom = "%s"
-        AND featuretype = "%s"
-        AND (
-            (%s BETWEEN %s AND %s)
-            )
-        AND id != "%s"
-        '''
-        c.execute(query % ('start',feature.chr, featuretype, 'start',feature.start,feature.stop,feature.id))
-        c.execute(query % ('stop',feature.chr, featuretype, 'stop', feature.start,feature.stop,feature.id))
         c.execute('''
-        SELECT * FROM tmpstart UNION SELECT * FROM tmpstop ORDER BY start
-        ''')
+        SELECT chrom,source,featuretype,start,stop,value,strand,phase,attributes
+        FROM features WHERE
+        chrom = ?
+        %(strand_clause)s
+        %(featuretype_clause)s
+        %(within_clause)s
+        ''' % locals(), (chrom,))
         for i in c:
             yield self.__class__.featureclass(*i)
-    
+
     def merge_features(self, features, ignore_strand=False):
         """
         *features* is an iterable of features that you want to merge together.
@@ -1574,7 +1512,7 @@ class GFFDB:
         if not ignore_strand:
             strands = [i.strand for i in features]
             if len(set(strands))!= 1:
-                raise NotImplementedError, 'Merging multiple strands not implemented yet'
+                raise ValueError, 'Specify ignore_strand=True to force merging of multiple strands'
             strand = strands[0]
         else:
             strand = '+'
