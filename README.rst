@@ -499,54 +499,53 @@ table.
 
 For example, say we have the following GFF line::
 
-    chr2L FlyBase CDS 8668 9276 .  + 0 ID=CDS_FBgn0031208:4_737;Parent=FBtr0300690
+    chr2L FlyBase exon 8668 9276 .  + 0 ID=exon_1;Parent=mRNA_1
 
 It will be entered into the ``features`` table like this
 
-===================== ======== ======== =========== ==== ====== ===== ====== ===== ============================================
-ID                    chrom    source   featuretype start stop  value strand phase attributes
-===================== ======== ======== =========== ==== ====== ===== ====== ===== ============================================
-CDS_FBgn0031208:4_737 chr2L    FlyBase  CDS         8668  9276  .     +      0     ID=CDS_FBgn0031208:4_737;Parent=FBtr0300690
-===================== ======== ======== ===== ===== ==== ====== ===== ====== ===== ============================================
+====== ===== ======= =========== ==== ===== ===== ====== ===== =================
+ID     chrom source  featuretype start stop value strand phase attributes
+====== ===== ======= =========== ==== ===== ===== ====== ===== =================
+exon_1 chr2L FlyBase CDS         8668 9276  .     +      0     ID=exon_1;mRNA_1
+====== ===== ======= =========== ==== ===== ===== ====== ===== =================
 
 Since this CDS has an annotated parent, this relationship is entered into the ``relations`` table:
 
-=========== =============== =====
-parent      child           level
-=========== =============== =====
-FBtr0300690 CDS_FBgn0031208 1
-=========== =============== =====
+======= ======= =====
+parent  child   level
+======= ======= =====
+mRNA_1  exon_1  1
+======= ======= =====
 
-Note that we can't assign the second-order parent to this CDS -- even though in
-this example the gene name (FBgn0031208) is embedded in the name of the CDS,
-this isn't always the case.  On this first pass, we can only add first-order
-parents because that's the only information that's available on a single line
-in the GFF file.
+Note that we can't assign any second-order parents.  On this first pass, we can
+only add first-order parents because that's the only information that's
+available on a single line in the GFF file.
 
-At some point in the GFF file, the parent transcript is found::
+At some point in the GFF file though, the parent transcript is found::
 
-    chr2L FlyBase mRNA 7529 9484 . + . ID=FBtr0300690;Parent=FBgn0031208
+    chr2L FlyBase mRNA 7529 9484 . + . ID=mRNA_1;Parent=gene_1
 
 ...and we import it into the ``features`` table:
 
-
-===================== ======== ======== =========== ==== ====== ===== ====== ===== ============================================
-ID                    chrom    source   featuretype start stop  value strand phase attributes
-===================== ======== ======== =========== ==== ====== ===== ====== ===== ============================================
-CDS_FBgn0031208:4_737 chr2L    FlyBase  CDS         8668  9276  .     +      0     ID=CDS_FBgn0031208:4_737;Parent=FBtr0300690
-FBtr0300690           chr2L    FlyBase  mRNA        7529  9484  .     +      .     ID=FBtr0300690;Parent=FBgn0031208
-===================== ======== ======== ===== ===== ==== ====== ===== ====== ===== ============================================
+====== ===== ======= =========== ==== ===== ===== ====== ===== =======================
+ID     chrom source  featuretype start stop value strand phase attributes
+====== ===== ======= =========== ==== ===== ===== ====== ===== =======================
+exon_1 chr2L FlyBase CDS         8668 9276  .     +      0     ID=exon_1;mRNA_1
+mRNA_1 chr2L FlyBase mRNA        7529 9484  .     +      .     ID=mRNA_1;Parent=gene_1
+====== ===== ======= =========== ==== ===== ===== ====== ===== =======================
 
 as well as the ``relations`` table:
 
+======= ======= =====
+parent  child   level
+======= ======= =====
+mRNA_1  exon_1  1
+gene_1  mRNA_1  1
+======= ======= =====
 
-=========== =============== =====
-parent      child           level
-=========== =============== =====
-FBtr0300690 CDS_FBgn0031208 1
-FBgn0031208 FBtr0300690     1
-=========== =============== =====
-
+...and these tables continue to grow as the GFF file is parsed.  When this
+first pass is done, indexes are created to speed up searching in the second
+pass.
 
 The second pass looks at the ``relations`` table.  Note that **the current implementation
 only goes 2 levels deep;** I still need to write a more general recursive form
@@ -554,20 +553,20 @@ of this to support hierarchies of arbitrary depth.
 
 In the second pass, we go through each ID in the ``features`` column.  Then we
 find that ID in the ``child`` column of the ``relations`` table and get its corresponding
-parent.  In the example above, we find CDS_FBgn0031208 in the ``child`` column.  Then we get its
-parent (FBtr0300690).  Then we take that parent and get *it's* parent by looking for it in the ``child`` column 
-and then grabbing its parent.
+parent.  In the example above, we find exon_1 in the ``child`` column.  Then we get its
+parent (mRNA_1).  Then we take that parent and get *it's* parent by looking for it in the ``child`` column 
+and then grabbing its parent (gene_1).
 
-Now we know the gene FBgn0031208 is the "grandparent" of the CDS, and we can
-enter it into the ``relations`` table as a parent of level 2:
+Now we know that gene_1 is the "grandparent" of exon_1, and we can enter it
+into the ``relations`` table as a parent of level 2:
 
-=========== =============== =====
-parent      child           level
-=========== =============== =====
-FBtr0300690 CDS_FBgn0031208 1
-FBgn0031208 FBtr0300690     1
-FBgn0031208 CDS_FBgn0031208 2
-=========== =============== =====
+======= ======= =====
+parent  child   level
+======= ======= =====
+mRNA_1  exon_1  1
+gene_1  mRNA_1  1
+gene_1  exon_1  2
+======= ======= =====
 
 In practice, the results of the "parent search" are written to a temporary text
 file and then imported into the ``relations`` table as a batch in the end.
