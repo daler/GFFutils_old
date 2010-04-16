@@ -10,12 +10,13 @@ complicated for a simple ``awk`` or ``grep`` command line call.
 For example, to get a BED file of genes from a GFF file, you can use something
 simple like::
 
-    grep "gene" chr2.gff | awk '{print $1,$4,$5}'
+    grep "gene" chr2.gff | awk '{print $1,$4,$5}' > out.bed
 
-But how would you use commandline tools to get a BED file of 3' exons from
-genes longer than 5 kb?  Or how would you get the average number of isoforms
-for genes on the plus strand?  These more complex questions are actually quite
-easy to answer using ``GFFutils``. 
+But how would you use commandline tools to get all the exons of a gene?  Or
+exons that are found in all isoforms of a gene?  Or a BED file of 3' exons from
+genes longer than 5 kb?  How would you get the average number of isoforms for
+genes on the plus strand?  These more complex questions are actually quite easy
+to answer using ``GFFutils``. 
 
 A by-product of structuring a GFF file in this way is that it is easy to
 convert to something like a refFlat format -- use the ``GFFDB.refFlat()``
@@ -362,7 +363,7 @@ Exporting a refFlat entry for one gene::
 
     print G.refFlat(gene_name)
 
-Create a new file, writing a refFlat entry for each gene.  Note that the
+Now create a new file, writing a refFlat entry for each gene.  Note that the
 ``refFlat()`` method is set up such that it will return ``None`` if there
 were no CDSs for a particular gene.  We don't want to write these to file,
 but do want to keep track of them.
@@ -385,7 +386,7 @@ So, what were those genes that didn't have CDSs?  Check the first 25::
     for g in missing_cds[:25]:
         print g.attributes.Name[0]
 
-Ahhhhh . . . a bunch of snoRNAs, tRNAs, etc.  Makes sense!
+A bunch of snoRNAs, tRNAs, etc.
 
 
 ``GFFFeatures`` have a ``GFFFeature.tostring()`` method which prints
@@ -415,11 +416,7 @@ Gene count
 
 ::
 
-    gene_count = 0
-    for gene in G.features_of_type('three_prime_UTR'):
-        gene_count += 1
-    print gene_count
-
+    G.count_features_of_type('gene')
 
 Average gene length
 ~~~~~~~~~~~~~~~~~~~
@@ -431,7 +428,6 @@ Average gene length
         gene_lengths += len(gene)
         gene_count += 1
     mean_gene_length = float(gene_lengths) / gene_count
-    print mean_gene_length
 
 Longest gene
 ~~~~~~~~~~~~
@@ -442,19 +438,42 @@ Longest gene
         gene_len = len(gene)
         if gene_len > maxlen:
             maxlen = gene_len
+            maxgene = gene
     print maxlen
+    print maxgene
+
+Longest gene, raw SQL
+~~~~~~~~~~~~~~~~~~~~~
+This version runs faster because it only ever looks at the start and stop
+columns as opposed to the above version, which returns a full GFFFeature object
+for each gene::
+
+    c = G.conn.cursor()
+    c.execute('''
+        SELECT (stop-start) as LEN, * 
+        FROM features
+        WHERE featuretype="gene"
+        ORDER BY LEN DESC
+    ''')
+    results = c.fetchone()
+    maxlen = results[0]
+       
 
 Average exon count
 ~~~~~~~~~~~~~~~~~~
-::
+This takes several seconds to run, but as far as I know it's not something that
+can be done easily using grep or awk::
 
     exon_count = 0
     gene_count = 0
     for gene in G.features_of_type('gene'):
         gene_exon_count = 0
+
+        # get all grandchildren, only counting the exons
         for child in G.children(gene.id,2):
             if child.featuretype == 'exon':
                 gene_exon_count += 1
+
         exon_count += gene_exon_count
         gene_count += 1
     mean_exon_count = float(exon_count) / gene_count
@@ -487,7 +506,20 @@ Average number of isoforms for genes on plus strand
         gene_count += 1
     mean_isoform_count = float(isoform_count) / gene_count
 
-            
+
+BED file of all exonic bases on chr2L
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+::
+
+    exons = G.features_of_type('exon', chrom='chr2L')
+    merged_exons = G.merge_features(exons,ignore_strand=True)
+    fout = open('out.bed','w')
+    for i in merged_exons:
+        fout.write(i.to_bed())
+    fout.close()
+
+    
+
 Strategy
 --------
 A GFF database is built in several passes.  
