@@ -46,7 +46,8 @@ step again.
 The database will take roughly twice as much hard drive space as the
 original text file.  This is the cost of interactivity and fast lookups.
 
-From either a Python script or a Python shell::
+You will need a GFF file to import.  From either a Python script or a Python
+shell::
 
     import GFFutils
     
@@ -56,11 +57,14 @@ From either a Python script or a Python shell::
     # the database that will be created
     db_filename = '/data/dm3.db'
     
-    # do it! (this will take ~2 min to run)
+    # do it! (this will take several minutes to run)
     GFFutils.create_gffdb(gfffn, db_filename)
 
 Now ``dm3.db`` is the sqlite3 database that can be used in all sorts of
 weird and wonderful ways, outlined below.
+
+You can find more information on exactly what's going on in the "Strategy"
+section below.
 
 For power users, you can of course work on the database directly. Here's the
 schema::
@@ -79,11 +83,15 @@ schema::
                                 primary key (id)
                               );
     CREATE TABLE relations (parent text, child text, level int, primary key(parent,child,level) );
+
     CREATE INDEX childindex on relations (child);
+    CREATE INDEX featuretypes on features(featuretype);
     CREATE INDEX ids ON features (id);
     CREATE INDEX parentindex on relations (parent);
     CREATE INDEX starts on features(start);
+    CREATE INDEX startstrand on features(start,strand);
     CREATE INDEX stops on features(stop);
+    CREATE INDEX stopstrand on features(stop,strand);
 
 
 Using the database interactively
@@ -480,3 +488,95 @@ Average number of isoforms for genes on plus strand
     mean_isoform_count = float(isoform_count) / gene_count
 
             
+Strategy
+--------
+A GFF database is built in several passes.  
+
+During the first pass, the lines from the GFF file are split up into fields and 
+imported into the ``features`` table.  If a "Parent" attribute is defined for the
+feature, then we know its first-order parent and we can enter this into the ``relations`` 
+table.
+
+For example, say we have the following GFF line::
+
+    chr2L FlyBase CDS 8668 9276 .  + 0 ID=CDS_FBgn0031208:4_737;Parent=FBtr0300690
+
+It will be entered into the ``features`` table like this
+
+===================== ======== ======== =========== ==== ====== ===== ====== ===== ============================================
+ID                    chrom    source   featuretype start stop  value strand phase attributes
+===================== ======== ======== =========== ==== ====== ===== ====== ===== ============================================
+CDS_FBgn0031208:4_737 chr2L    FlyBase  CDS         8668  9276  .     +      0     ID=CDS_FBgn0031208:4_737;Parent=FBtr0300690
+===================== ======== ======== ===== ===== ==== ====== ===== ====== ===== ============================================
+
+Since this CDS has an annotated parent, this relationship is entered into the ``relations`` table:
+
+=========== =============== =====
+parent      child           level
+=========== =============== =====
+FBtr0300690 CDS_FBgn0031208 1
+=========== =============== =====
+
+Note that we can't assign the second-order parent to this CDS -- even though in
+this example the gene name (FBgn0031208) is embedded in the name of the CDS,
+this isn't always the case.  On this first pass, we can only add first-order
+parents because that's the only information that's available on a single line
+in the GFF file.
+
+At some point in the GFF file, the parent transcript is found::
+
+    chr2L FlyBase mRNA 7529 9484 . + . ID=FBtr0300690;Parent=FBgn0031208
+
+...and we import it into the ``features`` table:
+
+
+===================== ======== ======== =========== ==== ====== ===== ====== ===== ============================================
+ID                    chrom    source   featuretype start stop  value strand phase attributes
+===================== ======== ======== =========== ==== ====== ===== ====== ===== ============================================
+CDS_FBgn0031208:4_737 chr2L    FlyBase  CDS         8668  9276  .     +      0     ID=CDS_FBgn0031208:4_737;Parent=FBtr0300690
+FBtr0300690           chr2L    FlyBase  mRNA        7529  9484  .     +      .     ID=FBtr0300690;Parent=FBgn0031208
+===================== ======== ======== ===== ===== ==== ====== ===== ====== ===== ============================================
+
+as well as the ``relations`` table:
+
+
+=========== =============== =====
+parent      child           level
+=========== =============== =====
+FBtr0300690 CDS_FBgn0031208 1
+FBgn0031208 FBtr0300690     1
+=========== =============== =====
+
+
+The second pass looks at the ``relations`` table.  Note that **the current implementation
+only goes 2 levels deep;** I still need to write a more general recursive form
+of this to support hierarchies of arbitrary depth.
+
+In the second pass, we go through each ID in the ``features`` column.  Then we
+find that ID in the ``child`` column of the ``relations`` table and get its corresponding
+parent.  In the example above, we find CDS_FBgn0031208 in the ``child`` column.  Then we get its
+parent (FBtr0300690).  Then we take that parent and get *it's* parent by looking for it in the ``child`` column 
+and then grabbing its parent.
+
+Now we know the gene FBgn0031208 is the "grandparent" of the CDS, and we can
+enter it into the ``relations`` table as a parent of level 2:
+
+=========== =============== =====
+parent      child           level
+=========== =============== =====
+FBtr0300690 CDS_FBgn0031208 1
+FBgn0031208 FBtr0300690     1
+FBgn0031208 CDS_FBgn0031208 2
+=========== =============== =====
+
+In practice, the results of the "parent search" are written to a temporary text
+file and then imported into the ``relations`` table as a batch in the end.
+This is to avoid recalculating the index each time a new row is added, somthing
+that would be extraordinarily time consuming.
+
+Once the second pass is complete, indexes are built and the database is ready for use.
+
+For a 130MB GFF file with 800,000+ features, the entire process takes a little
+under 10 mins to run.  Luckily, you only need to make this time investment when
+you have a new GFF file; if you already have a database built then using
+GFFutils is quite fast.
