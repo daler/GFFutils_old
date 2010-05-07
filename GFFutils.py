@@ -4,7 +4,14 @@ Module for complex interaction with a GFF file.
 See http://github.com/daler/GFFutils for source and documentation.
 """
 import os
-import sqlite3, sys, time, tempfile, os, mmap, string, copy
+import sqlite3
+import sys
+import time
+import tempfile
+import mmap
+import string
+import copy
+import gzip
 
 class GFFFeature(object):
     """
@@ -268,7 +275,7 @@ class GFFFile(object):
         if type(f) is str:
             self.stringfn = True
             if os.path.splitext(f)[-1] == '.gz':
-                self.file = gzip.open(self.fn)
+                self.file = gzip.open(f)
             else:
                 self.file = open(f)
         else:
@@ -798,7 +805,10 @@ def create_gffdb(gfffn, dbfn):
     """
 
     # Calculate lines so you can display the percent complete
-    f = open(gfffn)
+    if os.path.splitext(gfffn)[-1] == '.gz':
+        f = gzip.open(gfffn)
+    else:
+        f = open(gfffn)
     nlines = 0.0
     for line in f:
         nlines += 1
