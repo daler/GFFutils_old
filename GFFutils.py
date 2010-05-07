@@ -1297,7 +1297,7 @@ class GFFDB:
 
     def closest_feature(self, chrom, pos, featuretype='gene', strand=None, ignore=None, direction=None):
         """
-        Returns the closest TSS feature to the coordinate. Strand optional.  
+        Returns the distance and ID of the closest TSS to the coordinate. Strand optional.
         """
         
         # e.g., AND id != FBgn0001 AND id != FBgn0002
@@ -1594,6 +1594,9 @@ class GFFDB:
         So if *features* contains the exons of a transcript, this method will
         return the introns.
 
+        If the features returned are not sorted, you may get overlapping
+        results.
+
         Example for getting all the 'non-exonic' space::
             
             # merge_features needs a single chrom and single strand
@@ -1604,13 +1607,14 @@ class GFFDB:
         for i,feature in enumerate(features):
             if i == 0:
                 interfeature_start = feature.stop
+                last_feature = feature
                 continue
             interfeature_stop = feature.start
-            featuretype = 'inter_%s_%s' % (features[i-1].featuretype, feature.featuretype)
-            assert features[i-1].strand == feature.strand
-            assert features[i-1].chr == feature.chr
-            strand = features[0].strand
-            chr = features[0].chr
+            featuretype = 'inter_%s_%s' % (last_feature.featuretype, feature.featuretype)
+            assert last_feature.strand == feature.strand
+            assert last_feature.chr == feature.chr
+            strand = last_feature.strand
+            chr = last_feature.chr
 
             # Shrink
             interfeature_start += 1
@@ -1972,6 +1976,19 @@ class GFFDB:
         results = c.fetchone()
         return self.__class__.featureclass(*results)
         
+
+    def coding_genes(self):
+        """
+        Returns an iterator of genes that contain CDSs. Useful for if you want
+        to exclude tRNA, various ncRNAs, etc, since they are also annotated
+        with featuretype "gene".
+        """
+        for g in self.features_of_type('gene'):
+            for grandchild in self.children(g.id, level=2):
+                if grandchild.featuretype == 'CDS':
+                    yield g
+                    break
+
 
 class GTFDB(GFFDB):
     featureclass = GTFFeature
