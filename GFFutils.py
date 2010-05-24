@@ -5,6 +5,7 @@ See http://github.com/daler/GFFutils for source and documentation.
 """
 import os
 import sqlite3
+import itertools
 import sys
 import time
 import tempfile
@@ -1999,6 +2000,50 @@ class GFFDB:
                     yield g
                     break
 
+    def n_gene_isoforms(self, geneID):
+        """
+        Returns the number of isoforms that this gene has.
+        """
+        n = 0
+        for i in self.children(geneID, level=1, featuretype='mRNA'):
+            n += 1
+        return n
+
+    def n_exon_isoforms(self, exonID):
+        """
+        Returns the number of isoforms that this exon is found in.
+        """
+        c = self.conn.cursor()
+        c.execute('''
+        SELECT count() FROM relations 
+        JOIN features 
+        ON relations.parent=features.id
+        WHERE relations.child=?
+        AND
+        relations.level=1
+        AND 
+        features.featuretype="mRNA"
+        ''', (exonID,))
+        return c.fetchone()[0]
+
+    def exons_gene(self,exonID):
+        """
+        Returns the ID of the exon's parent gene.  Fast, single-purpose
+        method that doesn't do the type conversion or sorting of
+        self.parents().
+        """
+        c = self.conn.cursor()
+        c.execute('''
+        SELECT parent FROM relations
+        JOIN features 
+        ON relations.parent=features.id
+        WHERE child=?
+        AND 
+        relations.level=2
+        AND
+        features.featuretype="gene"
+        ''', (exonID,))
+        return c.fetchone()[0]
 
 class GTFDB(GFFDB):
     featureclass = GTFFeature
