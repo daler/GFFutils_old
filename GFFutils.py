@@ -26,7 +26,7 @@ class GFFFeature(object):
         def __init__(self):
             self._attrs = []  # will hold a list of attributes added to the object.
 
-    def __init__(self, chr, source, featuretype, start, stop,
+    def __init__(self, id, chr, source, featuretype, start, stop,
                  value,strand,phase,attributes,strvals=False):
         """
         *chr*
@@ -296,8 +296,8 @@ class GFFFile(object):
             if line.startswith('#') or len(line) == 0:
                 continue
             L = line.rstrip().split('\t')
-            args = [None for i in range(9)]
-            args[:len(L)] = L
+            args = [None for i in range(10)]
+            args[1:len(L)+1] = L
             args.append(self.strvals)
             yield self.__class__.featureclass(*args)
 
@@ -305,9 +305,6 @@ class GFFFile(object):
         if self.stringfn:
             f.close()
     
-    def next(self):
-        return self.__iter__().next()
-
     def __eq__(self,other):
         if self._strattributes != other._strattributes:
             return False
@@ -326,6 +323,12 @@ class GTFFeature(GFFFeature):
     """
     Class to represent a GTF feature and its annotations. Subclassed from GFFFeature.
     """
+    
+    def __init__(self,*args,**kwargs):
+        id = args[0]
+        GFFFeature.__init__(self,*args,**kwargs)
+        self.add_attribute('ID',id)
+
 
     def tostring(self):
         """
@@ -393,42 +396,6 @@ class GTFFeature(GFFFeature):
                 # Keep track inside the Attributes object of what you added to it
                 self.attributes._attrs.append(field)
         
-        # construct ID
-        if self.featuretype=='CDS' or self.featuretype=='exon':
-            parent = self.attributes.transcript_id
-            grandparent = self.attributes.gene_id
-            
-            # UCSC GTF files have transcripts with the same name as genes
-            # (except for multiple transcripts, which have "dup1" etc appended)
-            # If they're the same, then append "_xs" to transcript IDs.
-            if parent == grandparent:
-                self.attributes.transcript_id += '_xs'
-                parent = self.attributes.transcript_id
-
-            if hasattr(self.attributes,'exon_number'):
-                exon_number = self.attributes.exon_number
-            else:
-                # UCSC GTF files don't have "exon number" attribute, so 
-                # create one artificially.
-                exon_number = exon_numbers.setdefault(parent,0)
-                exon_number += 1
-                exon_numbers[parent] = exon_number
-                self.attributes.exon_number = exon_number
-
-            # construct a unqiue ID for this exon.
-            ID = '%s:%s:%d' % (self.featuretype, parent, exon_number)
-            self.add_attribute('ID',ID)
-
-        if self.featuretype == 'gene':
-            # since genes are not actually listed in GTF files, here we're
-            # using the attributes artificially created when the database
-            # was created.
-            self.add_attribute('ID',self.attributes.gene_id)
-        if self.featuretype == 'mRNA':
-            # since genes are not actually listed in GTF files, here we're
-            # using the attributes artificially created when the database
-            # was created.
-            self.add_attribute('ID',self.attributes.transcript_id)
            
 
 class GTFFile(GFFFile):
@@ -985,7 +952,26 @@ def create_gtfdb(gtffn, dbfn):
     """
     Reads in a GTF file and constructs a database for use with downstream
     analysis.  The GTFDB class will work as an interface to this database. 
+
+    Assume that for a CDS, the attribute gene_id specifies the "grandparent" gene
+    and the attribute transcript_id specifies the "parent" transcript.
+
+    This also implies that the gene_id is the parent of the transcript_id.
+
+    Thus, the relations table is filled out first.
     """
+    # Not all GTF files contain "exon_number" attributes.  We need these in
+    # order to construct unique IDs for features. This dictionary will hold the
+    # current highest count for each featuretype and for each gene.
+    #
+    # feature_counts = {'exon':{'gene1':1,
+    #                           'gene2':8,},
+    #                   '5UTR':{'gene1':1,
+    #                           'gene2':1}
+    #                  }
+
+    feature_counts = {}
+
 
     # Calculate lines so you can display the percent complete
     f = open(gtffn)
@@ -1027,38 +1013,46 @@ def create_gtfdb(gtffn, dbfn):
             sys.stdout.flush()
         last_perc = perc_done
 
+
+        parent = feature.attributes.transcript_id
+        grandparent = feature.attributes.gene_id
         
+        # Removed this . . . dm3 GTF has this, but not MB8.  Switching over
+        # to the lookup dict
+        #exon_number = feature.attributes.exon_number
         
-        # Construct a unique ID for this exon.
-        if feature.featuretype=='CDS' or feature.featuretype=='exon':
-            parent = feature.attributes.transcript_id
-            grandparent = feature.attributes.gene_id
-            exon_number = feature.attributes.exon_number
-            ID = '%s:%s:%d' % (feature.featuretype, parent, exon_number)
-            feature.add_attribute('ID',ID)
+        feature_counts.setdefault(feature.featuretype,{}).setdefault(grandparent,0)
 
-            # If it's an exon, its attributes include its parent transcript
-            # and its 'grandparent' gene.  So we can insert these
-            # relationships into the relations table now.
+        # and then increment it so exon numbers start on 1
+        feature_counts[feature.featuretype][grandparent] += 1
 
-            # Note that the table schema has (parent,child) as a primary
-            # key, so the INSERT OR IGNORE won't add multiple entries for a
-            # single (parent,child) relationship
+        feature_number = feature_counts[feature.featuretype][grandparent]
+        
+        ID = '%s:%s:%d' % (feature.featuretype, parent, feature_number)
+        feature.add_attribute('ID',ID)
 
-            # The gene has a grandchild exon
-            c.execute('''
-            INSERT OR IGNORE INTO relations VALUES (?,?,?)
-            ''', (grandparent, feature.id, 2))
+        # If it's an exon, its attributes include its parent transcript
+        # and its 'grandparent' gene.  So we can insert these
+        # relationships into the relations table now.
 
-            # The transcript has a child exon
-            c.execute('''
-            INSERT OR IGNORE INTO relations VALUES (?,?,?)
-            ''', (parent, feature.id, 1))
+        # Note that the table schema has (parent,child) as a primary
+        # key, so the INSERT OR IGNORE won't add multiple entries for a
+        # single (parent,child) relationship
 
-            # The gene has a child transcript
-            c.execute('''
-            INSERT OR IGNORE INTO relations VALUES (?,?,?)
-            ''', (grandparent, parent, 1))
+        # The gene has a grandchild exon
+        c.execute('''
+        INSERT OR IGNORE INTO relations VALUES (?,?,?)
+        ''', (grandparent, feature.id, 2))
+
+        # The transcript has a child exon
+        c.execute('''
+        INSERT OR IGNORE INTO relations VALUES (?,?,?)
+        ''', (parent, feature.id, 1))
+
+        # The gene has a child transcript
+        c.execute('''
+        INSERT OR IGNORE INTO relations VALUES (?,?,?)
+        ''', (grandparent, parent, 1))
 
         
         #if feature.featuretype not in supported_featuretypes:
@@ -1067,8 +1061,7 @@ def create_gtfdb(gtffn, dbfn):
         #    #print 'Warning: %s not a supported featuretype' % feature.featuretype
         #    continue
     
-        # If it's a supported featuretype, we can also insert the feature
-        # into the features table
+        # Insert the feature into the features table.
         c.execute('''
                   INSERT OR IGNORE INTO features VALUES (?,?,?,?,?,?,?,?,?,?)
                   ''',(feature.id, 
@@ -1169,14 +1162,24 @@ def create_gtfdb(gtffn, dbfn):
         # later, upon accessing the database, the GTFDB wrapper will know
         # how to assign an ID.  This is sort of a hack in order to maintain
         # cleaner class inheritance between GFFFeatures and GTFFeatures.
+
+        # Since the relations table only has transcript children in it, any parents
+        # at level 1 are mRNAs.  
+        #
+        # WARNING: this does NOT account for non-coding RNAs -- they will still
+        # be called "mRNA"
         if level == 1:
             featuretype = 'mRNA'
             attributes = 'transcript_id "%s"; ' % parent
+
+        # On the other hand, level 2 parents means that the parent is a gene.
         if level == 2:
             featuretype = 'gene'
             attributes = 'gene_id "%s"; ' % parent
+
+
         if level is None:
-            print 'got back nothing good from db'
+            print 'WARNING: got back nothing good from db for %s' % parent
             featuretype='None'
 
         fout.write('%s\t%s\t%s\t%s\t%s\t%s\t%s\n' % (parent,chrom,
@@ -1215,9 +1218,11 @@ def create_gtfdb(gtffn, dbfn):
 
     conn.commit()
         
+    del feature_counts
 
 class GFFDB:
     featureclass = GFFFeature
+    add_id = ''
     def __init__(self,db_fn):
         """*db_fn* is the filename of the database to use"""
         self.db_fn = db_fn
@@ -1227,8 +1232,8 @@ class GFFDB:
     def __getitem__(self,id):
         c = self.conn.cursor()
         c.execute('''
-                  SELECT chrom, source, featuretype, start, stop, value, strand, phase, attributes from features where id = ?
-                  ''', (id,))
+                  SELECT %s chrom, source, featuretype, start, stop, value, strand, phase, attributes from features where id = ?
+                  ''' % self.__class__.add_id, (id,))
         results = c.fetchall()
         assert len(results) == 1, len(results)
         return self.__class__.featureclass(*results[0])
@@ -1269,8 +1274,8 @@ class GFFDB:
         c = self.conn.cursor()
         c.execute('''
                   SELECT 
-                  chrom, source, featuretype, start, stop, value,
-                  strand, phase, attributes
+                  id,chrom, source, featuretype, start, stop, value, strand,
+                  phase, attributes
                   FROM 
                   features 
                   WHERE featuretype = ?
@@ -1278,7 +1283,7 @@ class GFFDB:
                   ORDER BY start
                   ''' % filter_clause , (featuretype,))
         for i in c:
-            yield self.__class__.featureclass(*i)
+            yield self[i[0]]
     
     def features(self):
         """
@@ -1298,7 +1303,7 @@ class GFFDB:
         c = self.conn.cursor()
         c.execute('''
                   SELECT
-                  chrom, source, featuretype, start, stop, value, strand,
+                  id, chrom, source, featuretype, start, stop, value, strand,
                   phase, attributes
                   FROM
                   features 
@@ -1484,7 +1489,7 @@ class GFFDB:
             within_clause = ' AND start <= %s AND stop >= %s' % (stop,start)
         c = self.conn.cursor()
         c.execute('''
-        SELECT chrom,source,featuretype,start,stop,value,strand,phase,attributes
+        SELECT id,chrom,source,featuretype,start,stop,value,strand,phase,attributes
         FROM features WHERE
         chrom = ?
         %(strand_clause)s
@@ -1735,7 +1740,7 @@ class GFFDB:
 
         cursor.execute('''
             SELECT DISTINCT
-            chrom, source, featuretype, start, stop, value, strand, phase, attributes 
+            id, chrom, source, featuretype, start, stop, value, strand, phase, attributes 
             FROM features JOIN relations 
             ON relations.child = features.id
             WHERE relations.parent = ? 
@@ -1757,7 +1762,7 @@ class GFFDB:
             featuretype_clause = ' AND features.featuretype = "%s"' % featuretype
         cursor.execute('''
             SELECT DISTINCT
-            chrom, source, featuretype, start, stop, value, strand, phase, attributes 
+            id, chrom, source, featuretype, start, stop, value, strand, phase, attributes 
             FROM features JOIN relations 
             ON relations.parent = features.id
             WHERE relations.child = ? 
@@ -1978,7 +1983,7 @@ class GFFDB:
         if featuretype is not None:
             featuretype_clause = 'featuretype = "%s" AND ' % featuretype
         c.execute('''
-        SELECT chrom, source, featuretype, start, stop, value, strand, phase, attributes 
+        SELECT id, chrom, source, featuretype, start, stop, value, strand, phase, attributes 
         FROM features
         WHERE 
         %s
@@ -1999,7 +2004,7 @@ class GFFDB:
                 if grandchild.featuretype == 'CDS':
                     yield g
                     break
-
+    
     def n_gene_isoforms(self, geneID):
         """
         Returns the number of isoforms that this gene has.
@@ -2047,6 +2052,7 @@ class GFFDB:
 
 class GTFDB(GFFDB):
     featureclass = GTFFeature
+    add_id = 'id,'
 
     def three_prime_UTR(self,id):
         """
@@ -2103,7 +2109,6 @@ class GTFDB(GFFDB):
                 UTRs.append(UTR)
         for i in UTRs:
             yield i
-
 
 if __name__ == "__main__":
     G = GTFDB('/home/ryan/data/solexa/meta-solexa/dm3-chr.GTF.db')
