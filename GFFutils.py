@@ -26,7 +26,7 @@ class GFFFeature(object):
         def __init__(self):
             self._attrs = []  # will hold a list of attributes added to the object.
 
-    def __init__(self, id, chr, source, featuretype, start, stop,
+    def __init__(self, chr, source, featuretype, start, stop,
                  value,strand,phase,attributes,strvals=False):
         """
         *chr*
@@ -1740,13 +1740,13 @@ class GFFDB:
 
         cursor.execute('''
             SELECT DISTINCT
-            id, chrom, source, featuretype, start, stop, value, strand, phase, attributes 
+            %s chrom, source, featuretype, start, stop, value, strand, phase, attributes 
             FROM features JOIN relations 
             ON relations.child = features.id
             WHERE relations.parent = ? 
             AND relations.level = ? 
             %s
-            ORDER BY start''' % featuretype_clause,(id,level))
+            ORDER BY start''' % (self.__class__.add_id, featuretype_clause),(id,level))
         for i in cursor:
             yield self.__class__.featureclass(*i)
 
@@ -1762,13 +1762,13 @@ class GFFDB:
             featuretype_clause = ' AND features.featuretype = "%s"' % featuretype
         cursor.execute('''
             SELECT DISTINCT
-            id, chrom, source, featuretype, start, stop, value, strand, phase, attributes 
+            %s chrom, source, featuretype, start, stop, value, strand, phase, attributes 
             FROM features JOIN relations 
             ON relations.parent = features.id
             WHERE relations.child = ? 
             AND relations.level = ? 
             %s
-            ORDER BY start''' % (featuretype_clause),(id,level))
+            ORDER BY start''' % (self.__class__.add_id, featuretype_clause),(id,level))
         for i in cursor:
             yield self.__class__.featureclass(*i)
 
@@ -1983,12 +1983,12 @@ class GFFDB:
         if featuretype is not None:
             featuretype_clause = 'featuretype = "%s" AND ' % featuretype
         c.execute('''
-        SELECT id, chrom, source, featuretype, start, stop, value, strand, phase, attributes 
+        SELECT chrom, source, featuretype, start, stop, value, strand, phase, attributes 
         FROM features
         WHERE 
         %s
         rowid >= abs(random()) %% (SELECT MAX(rowid) FROM features) LIMIT 1
-        ''' % featuretype_clause)
+        ''' % (self.__class__.add_id, featuretype_clause))
         results = c.fetchone()
         return self.__class__.featureclass(*results)
         
