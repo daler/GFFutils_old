@@ -296,8 +296,8 @@ class GFFFile(object):
             if line.startswith('#') or len(line) == 0:
                 continue
             L = line.rstrip().split('\t')
-            args = [None for i in range(10)]
-            args[1:len(L)+1] = L
+            args = [None for i in range(9)]
+            args[:len(L)] = L
             args.append(self.strvals)
             yield self.__class__.featureclass(*args)
 
