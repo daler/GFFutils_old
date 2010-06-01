@@ -782,8 +782,16 @@ def create_gffdb(gfffn, dbfn):
         nlines += 1
     f.close()
 
-    # No reason to restrict featuretypes anymore . . . so snoRNAs etc. are cool
-    #supported_featuretypes = ['gene','CDS','mRNA','transcript','exon','three_prime_UTR','five_prime_UTR']
+    # This dictionary will contain the featurecounts of unlabeled features
+    # for assigning unique IDs to features with no ID in their attributes.
+    # Values will increment when a feature has no ID.
+    #
+    #   e.g., 
+    #       featurecounts {'gene':42,
+    #                      'three_prime_UTR':3,
+    #                      'exon':408}
+    featurecounts = {}
+
 
     # Create tables and indexes.
     conn = sqlite3.connect(dbfn)
@@ -823,11 +831,13 @@ def create_gffdb(gfffn, dbfn):
             print '\rpopulating database with features and first-order parents: %s%%'%perc_done,
             sys.stdout.flush()
         last_perc = perc_done
+
+        # If no ID, then assign one.
         if feature.id is None:
-            continue
-            # print 'no feature ID for %s' % feature
-        #if feature.featuretype not in supported_featuretypes:
-        #    continue
+            featurecounts.setdefault(feature.featuretype,0)
+            featurecounts[feature.featuretype] += 1
+            new_id = 'unnamed_%s_%s' % (feature.featuretype, featurecounts[feature.featuretype]) 
+            feature.add_attribute('ID',new_id)
 
         # actual insertion here
         c.execute('''
@@ -964,11 +974,13 @@ def create_gtfdb(gtffn, dbfn):
     # order to construct unique IDs for features. This dictionary will hold the
     # current highest count for each featuretype and for each gene.
     #
-    # feature_counts = {'exon':{'gene1':1,
-    #                           'gene2':8,},
-    #                   '5UTR':{'gene1':1,
-    #                           'gene2':1}
-    #                  }
+    # So feature_counts will look something like:
+    #
+    #     feature_counts = {'exon':{'gene1':1,
+    #                               'gene2':8,},
+    #                       '5UTR':{'gene1':1,
+    #                               'gene2':1}
+    #                      }
 
     feature_counts = {}
 
@@ -979,8 +991,6 @@ def create_gtfdb(gtffn, dbfn):
     for line in f:
         nlines += 1
     f.close()
-
-    supported_featuretypes = ['gene','CDS','mRNA','transcript','exon','three_prime_UTR','five_prime_UTR']
 
     # Create tables and indexes.
     conn = sqlite3.connect(dbfn)
@@ -1054,13 +1064,6 @@ def create_gtfdb(gtffn, dbfn):
         INSERT OR IGNORE INTO relations VALUES (?,?,?)
         ''', (grandparent, parent, 1))
 
-        
-        #if feature.featuretype not in supported_featuretypes:
-        #    # This will be start_codon and stop_codon features, plus any
-        #    # strays that make it in.
-        #    #print 'Warning: %s not a supported featuretype' % feature.featuretype
-        #    continue
-    
         # Insert the feature into the features table.
         c.execute('''
                   INSERT OR IGNORE INTO features VALUES (?,?,?,?,?,?,?,?,?,?)
