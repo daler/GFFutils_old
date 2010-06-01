@@ -157,6 +157,8 @@ class GFFFeature(object):
             value = [value]
         setattr(self.attributes,attribute,value)
         self.attributes._attrs.append(attribute)
+        attr = ','.join(value)
+        self._strattributes+=';%s=%s' % (attribute,attr)
 
     def to_bed(self,fieldcount=3):
         """
@@ -373,6 +375,27 @@ class GTFFeature(GFFFeature):
             else:
                 printables.append(str(item))
         return '\t'.join(printables).rstrip()+'\n'
+
+    def add_attribute(self,attribute,value):
+        """
+        Add an attribute to this feature.
+
+        *value* can be of any type; if it can't be sliced (and it's not a
+        string) then it's converted into a list automatically.  
+        """
+        try:
+            value[0]
+        except TypeError:
+            # unsubscriptable
+            value = [value]
+
+        # Strings are subscriptable, but should be wrapped as a list.
+        if type(value) == str:
+            value = [value]
+        setattr(self.attributes,attribute,value)
+        self.attributes._attrs.append(attribute)
+        assert len(value) == 1, 'Multiple values for one attribute not currently supported for GTF features'
+        self._strattributes+=';%s "%s"' % (attribute,value[0])
 
     def _parse_attributes(self,attributes):
         """
@@ -1042,7 +1065,11 @@ def create_gtfdb(gtffn, dbfn):
         feature_number = feature_counts[feature.featuretype][grandparent]
         
         ID = '%s:%s:%d' % (feature.featuretype, parent, feature_number)
-        feature.add_attribute('ID',ID)
+        
+        # With the new add_attribute() method adding to the string as well, we
+        # don't want something that permanent . . . so just stick with this
+        # just-for-the-database ID
+        # feature.add_attribute('ID',ID)
 
         # If it's an exon, its attributes include its parent transcript
         # and its 'grandparent' gene.  So we can insert these
@@ -1055,12 +1082,12 @@ def create_gtfdb(gtffn, dbfn):
         # The gene has a grandchild exon
         c.execute('''
         INSERT OR IGNORE INTO relations VALUES (?,?,?)
-        ''', (grandparent, feature.id, 2))
+        ''', (grandparent, ID, 2))
 
         # The transcript has a child exon
         c.execute('''
         INSERT OR IGNORE INTO relations VALUES (?,?,?)
-        ''', (parent, feature.id, 1))
+        ''', (parent, ID, 1))
 
         # The gene has a child transcript
         c.execute('''
@@ -1070,7 +1097,7 @@ def create_gtfdb(gtffn, dbfn):
         # Insert the feature into the features table.
         c.execute('''
                   INSERT OR IGNORE INTO features VALUES (?,?,?,?,?,?,?,?,?,?)
-                  ''',(feature.id, 
+                  ''',(ID, 
                    feature.chr,
                    feature.start, 
                    feature.stop,
