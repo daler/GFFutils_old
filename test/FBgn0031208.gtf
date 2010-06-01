@@ -1,0 +1,28 @@
+# GTF entries for FBgn0031208, for testing.
+#
+# This is the first gene in FlyBase r5.23, and entries contain the full gene
+# model.  To be able to understand, debug, and write tests, below are 1) a
+# simple graphical representation, and then 2) the explicit features defined by
+# the GFF.
+#
+# Simplified model (-- is UTR; == is CDS; .. is intron)
+#
+# -------===============...................=============---------- FBtr0300689
+# -------===============...................========........===---- FBtr0300690
+#
+#
+# ^^^^^^^^^^^^^^^^^^^^exon                 ^^^^^^^^^^^^^^^^^^^^^^^ exon  <-|
+#        =============CDS                  =============CDS                | 
+#        * start codon                                  * stop codon
+#
+# ^^^^^^^^^^^^^^^^^^^^exon                 ^^^^^^^^exon    ^^^^^^^exon   <-|            
+#                                          ========CDS     ===CDS          | FBtr0300690
+#
+chr2L	protein_coding	exon	7529	8116	.	+	.	 gene_id "FBgn0031208"; transcript_id "FBtr0089256";
+chr2L	protein_coding	CDS	7680	8116	.	+	0	 gene_id "FBgn0031208"; transcript_id "FBtr0089256";
+chr2L	protein_coding	start_codon	7680	7682	.	+	0	 gene_id "FBgn0031208"; transcript_id "FBtr0089256";
+chr2L	protein_coding	exon	8229	8589	.	+	.	 gene_id "FBgn0031208"; transcript_id "FBtr0089256";
+chr2L	protein_coding	CDS	8229	8589	.	+	1	 gene_id "FBgn0031208"; transcript_id "FBtr0089256";
+chr2L	protein_coding	exon	8668	9491	.	+	.	 gene_id "FBgn0031208"; transcript_id "FBtr0089256";
+chr2L	protein_coding	CDS	8668	9273	.	+	0	 gene_id "FBgn0031208"; transcript_id "FBtr0089256";
+chr2L	protein_coding	stop_codon	9274	9276	.	+	0	 gene_id "FBgn0031208"; transcript_id "FBtr0089256";

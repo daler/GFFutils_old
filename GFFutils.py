@@ -299,7 +299,11 @@ class GFFFile(object):
             args = [None for i in range(9)]
             args[:len(L)] = L
             args.append(self.strvals)
-            yield self.__class__.featureclass(*args)
+            if self.__class__.featureclass == GFFFeature:
+                yield self.__class__.featureclass(*args)
+            if self.__class__.featureclass == GTFFeature:
+                args.insert(0,None)
+                yield self.__class__.featureclass(*args)
 
         # close up shop when done.
         if self.stringfn:
@@ -323,12 +327,11 @@ class GTFFeature(GFFFeature):
     """
     Class to represent a GTF feature and its annotations. Subclassed from GFFFeature.
     """
-    
-    def __init__(self,*args,**kwargs):
-        id = args[0]
-        GFFFeature.__init__(self,*args,**kwargs)
+    def __init__(self, id, chr, source, featuretype, start, stop,
+                 value,strand,phase,attributes,strvals=False):
+        #print id,chr,source,featuretype,start,stop,value,strand,phase,attributes
+        GFFFeature.__init__(self,chr,source,featuretype,start,stop,value,strand,phase,attributes,strvals)
         self.add_attribute('ID',id)
-
 
     def tostring(self):
         """
@@ -385,7 +388,7 @@ class GTFFeature(GFFFeature):
             for item in items:
                 if len(item) == 0:
                     continue
-                field,value = item.strip().split(' ')
+                field,value = item.strip().split()
                 value = value.replace('"','')
                 try:
                     value = float(value)
@@ -1117,7 +1120,8 @@ def create_gtfdb(gtffn, dbfn):
     c.execute("""
               SELECT DISTINCT parent FROM relations
               """)
-    fout = open('temp.txt','w')
+    tmp = tempfile.mktemp()
+    fout = open(tmp,'w')
     counter = 0
     c2 = conn.cursor()
     for parent in c:
@@ -1201,6 +1205,9 @@ def create_gtfdb(gtffn, dbfn):
                   """, line.strip().split('\t'))
 
     conn.commit()
+
+    # clean up the tempfile.
+    os.remove(tmp)
 
     # show how much time it took
     t1 = time.time()
