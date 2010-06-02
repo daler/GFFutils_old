@@ -82,8 +82,14 @@ class GFFFeature(object):
             self.chr=chr
             self.source=source
             self.featuretype=featuretype
-            self.start=int(start)
-            self.stop=int(stop)
+            try:
+                self.start=int(start)
+            except ValueError:
+                self.start = None
+            try:
+                self.stop=int(stop)
+            except ValueError:
+                self.stop = None
             if value is not None:
                 try:
                     self.value=float(value)
