@@ -166,6 +166,16 @@ class GFFFeature(object):
         attr = ','.join(value)
         self._strattributes+=';%s=%s' % (attribute,attr)
 
+    def remove_attribute(self,attribute):
+        """
+        Delete attribute from this feature.
+        """
+        delattr(self.attributes, attribute)
+        self.attributes._attrs.remove(attribute)
+        ind1 = self._strattributes.find(attribute)
+        ind2 = self._strattributes.find(';',ind1)
+        self._strattributes = self._strattributes[:ind1]+self._strattributes[ind2:-1]
+
     def to_bed(self,fieldcount=3):
         """
         Returns the feature as a BED format line, with number of fields
@@ -223,10 +233,13 @@ class GFFFeature(object):
         In the interest of speed, does not do error-checking.
         """
         # Reconstruct the attributes field
-        attributes = ''
+        attributes = []
         for attr in self.attributes._attrs:
             values = getattr(self.attributes,attr)
-            attributes += attr+'='+','.join(values)+';'
+            values = map(str,values)
+            values = ','.join(values)
+            attributes.append(attr+'='+values)
+        attributes = ';'.join(attributes)
 
         items = [self.chr, 
                  self.source,
@@ -340,7 +353,7 @@ class GTFFeature(GFFFeature):
         #print id,chr,source,featuretype,start,stop,value,strand,phase,attributes
         GFFFeature.__init__(self,chr,source,featuretype,start,stop,value,strand,phase,attributes,strvals)
         self.add_attribute('ID',id)
-
+    
     def tostring(self):
         """
         Prints the GTF record suitable for writing to file (newline
@@ -361,7 +374,7 @@ class GTFFeature(GFFFeature):
         for attr in self.attributes._attrs:
             values = getattr(self.attributes,attr)
             if type(values) is list:
-                values = ','.join(values)
+                values = ','.join(map(str,values))
             attributes += attr+' '+'"'+str(values)+'"; '
 
         items = [self.chr, 
@@ -402,6 +415,17 @@ class GTFFeature(GFFFeature):
         self.attributes._attrs.append(attribute)
         assert len(value) == 1, 'Multiple values for one attribute not currently supported for GTF features'
         self._strattributes+=';%s "%s"' % (attribute,value[0])
+    
+
+    def remove_attribute(self,attribute):
+        """
+        Delete attribute from this feature.
+        """
+        delattr(self.attributes, attribute)
+        self.attributes._attrs.remove(attribute)
+        ind1 = self._strattributes.find(attribute)
+        ind2 = self._strattributes.find(';',ind1)
+        self._strattributes = self._strattributes[:ind1]+self._strattributes[ind2:]
 
     def _parse_attributes(self,attributes):
         """
@@ -1055,27 +1079,25 @@ def create_gtfdb(gtffn, dbfn):
             sys.stdout.flush()
         last_perc = perc_done
 
-
         parent = feature.attributes.transcript_id
         grandparent = feature.attributes.gene_id
         
-        # Removed this . . . dm3 GTF has this, but not MB8.  Switching over
-        # to the lookup dict
-        #exon_number = feature.attributes.exon_number
-        
+        # Initialize counts to 1 and get the feature number which will become
+        # the feature ID for the database.
+        #
+        # TODO: maybe this should be a uniquely-identifiable number (e.g.,
+        # gene-start-stop?, rather than an integer that is dependent on the
+        # location in the source file?
         feature_counts.setdefault(feature.featuretype,{}).setdefault(grandparent,0)
-
-        # and then increment it so exon numbers start on 1
         feature_counts[feature.featuretype][grandparent] += 1
-
         feature_number = feature_counts[feature.featuretype][grandparent]
         
-        ID = '%s:%s:%d' % (feature.featuretype, parent, feature_number)
+        # Note: with the new add_attribute() method adding to the string as
+        # well, we don't want something that permanent . . . so just stick with
+        # this just-for-the-database "ID" instead of
+        # "feature.add_attribute('ID',ID)"
+        ID = '%s:%s:%s-%s' % (feature.featuretype, parent, feature.start, feature.stop)
         
-        # With the new add_attribute() method adding to the string as well, we
-        # don't want something that permanent . . . so just stick with this
-        # just-for-the-database ID
-        # feature.add_attribute('ID',ID)
 
         # If it's an exon, its attributes include its parent transcript
         # and its 'grandparent' gene.  So we can insert these
@@ -2026,7 +2048,7 @@ class GFFDB:
         if featuretype is not None:
             featuretype_clause = 'featuretype = "%s" AND ' % featuretype
         c.execute('''
-        SELECT chrom, source, featuretype, start, stop, value, strand, phase, attributes 
+        SELECT %s chrom, source, featuretype, start, stop, value, strand, phase, attributes 
         FROM features
         WHERE 
         %s
