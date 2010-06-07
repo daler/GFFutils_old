@@ -64,3 +64,7 @@ chr2L	FlyBase	three_prime_UTR	8611	9484	.	+	.	ID=three_prime_UTR_FBgn0031208:3_7
 chr2L	FlyBase	exon	8668	9484	.	+	.	ID=FBgn0031208:4;Name=CG11023:4;Parent=FBtr0300690
 chr2L	FlyBase	CDS	8668	9276	.	+	0	ID=CDS_FBgn0031208:4_737;Name=CG11023-cds;Parent=FBtr0300690
 chr2L	FlyBase	three_prime_UTR	9277	9484	.	+	.	ID=three_prime_UTR_FBgn0031208:4_737;Name=CG11023-u3;Parent=FBtr0300690
+chr2L	FAKE	gene	10000	11000	.	-	.	ID=Fk_gene_1
+chr2L	FAKE	mRNA	10000	11000	.	-	.	ID=transcript_Fk_gene_1;Parent=Fk_gene_1
+chr2L	FAKE	exon	10000	11000	.	-	.	ID=Fk_gene_1:1;Parent=transcript_Fk_gene_1;
+chr2L	FAKE	CDS	10000	11000	.	-	.	ID=CDS:Fk_gene_1:1; Parent=transcript_Fk_gene_1;

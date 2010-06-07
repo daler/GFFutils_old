@@ -1368,11 +1368,11 @@ class GFFDB:
         c = self.conn.cursor()
         c.execute('''
                   SELECT
-                  id, chrom, source, featuretype, start, stop, value, strand,
+                  %s chrom, source, featuretype, start, stop, value, strand,
                   phase, attributes
                   FROM
                   features 
-                  ''')
+                  ''' % self.__class__.add_id)
         for i in c:
             yield self.__class__.featureclass(*i)
 
@@ -1483,6 +1483,7 @@ class GFFDB:
             #      |     |   X     |
             #                      ^ finds this one
             if strand == '-':
+                c = self.conn.cursor()
                 c.execute('''
                 SELECT abs(stop-%s) as AAA,id FROM features
                 WHERE featuretype = ?

@@ -65,6 +65,40 @@ GTF_parent_check_level_2 = {
                             'stop_codon:FBgn0031208:9274-9276':['FBgn0031208'],
                            }
 
+expected_feature_counts = {
+            'GFF':{'gene':2,
+                   'mRNA':3,
+                   'exon':5,
+                   'CDS':5,
+                   'five_prime_UTR':1,
+                   'intron':3,
+                   'pcr_product':1,
+                   'protein':2,
+                   'three_prime_UTR':2},
+            'GTF':{'gene':2,
+                   'mRNA':2,
+                   'CDS':4,
+                   'exon':4,
+                   'start_codon':1,
+                   'stop_codon':1}
+            }
+
+expected_features = {'GFF':['gene',
+                            'mRNA',
+                            'protein',
+                            'five_prime_UTR',
+                            'three_prime_UTR',
+                            'pcr_product',
+                            'CDS',
+                            'exon',
+                            'intron'],
+                    'GTF':['gene',
+                           'mRNA',
+                           'CDS',
+                           'exon',
+                           'start_codon',
+                           'stop_codon']}
+
 class TestGFFDBClass(object):
     featureclass = 'GFF'
     def setup(self):
@@ -167,16 +201,20 @@ class TestGFFDBClass(object):
             rawsql_cnt = self._count1(featuretype)
             count_feature_of_type_cnt = self._count3(featuretype)
             iterator_cnt = self._count4(featuretype)
+            try:
+                hard_count = expected_feature_counts[self.featureclass][featuretype]
+            except KeyError:
+                hard_count = 0
 
             # count2 is not an appropriate test for GTF files, since "gene" is
             # not explicitly listed -- only implied by the boundaries of CDSs:
             #
             if self.featureclass == 'GFF':
                 gffparsed_cnt = self._count2(featuretype)
-                assert rawsql_cnt == count_feature_of_type_cnt == iterator_cnt == gffparsed_cnt
+                assert rawsql_cnt == count_feature_of_type_cnt == iterator_cnt == gffparsed_cnt == hard_count
             
             if self.featureclass == 'GTF':
-                assert rawsql_cnt == count_feature_of_type_cnt == iterator_cnt
+                assert rawsql_cnt == count_feature_of_type_cnt == iterator_cnt == hard_count
 
     def total_features_test(self):
         """did all features in the GFF file make it into the database?"""
@@ -207,10 +245,8 @@ class TestGFFDBClass(object):
             parents1 = GTF_parent_check_level_1
             parents2 = GTF_parent_check_level_2
         for child, expected_parents in parents1.items():
-            observed_parents = self.G.parents(child, level=1)
-            for observed_parent in observed_parents:
-                print observed_parent
-                assert observed_parent.id in expected_parents
+            observed_parents = [i.id for i in self.G.parents(child, level=1)]
+            assert set(observed_parents) == set(expected_parents)
 
     def identity_test(self):
         """
@@ -237,9 +273,100 @@ class TestGFFDBClass(object):
             return
         assert False
 
+    def all_test(self):
+        """all() returns expected number of features?"""
+        results = list(self.G.all())
+        if self.featureclass == 'GFF':
+            assert len(results) == 24
+        if self.featureclass == 'GTF':
+            assert len(results) == 14
+     
+    def features_of_type_test(self):
+        """features_of_type() returns expected number of features?"""
+        d = expected_feature_counts[self.featureclass]
+        for key,val in d.items():
+            observed = len(list(self.G.features_of_type(key)))
+            print key,val
+            print observed
+            assert observed == val
+        
+        # now either catch all...
+        for key,val in d.items():
+            observed = len(list(self.G.features_of_type(key, chrom='chr2L', start=1, stop=100000)))
+            assert observed == val
+        
+        # or none...
+        for key,val in d.items():
+            
+            # wrong chrom should return 0
+            observed = len(list(self.G.features_of_type(key, chrom='chrX', strand='+', start=1, stop=10000)))
+            assert observed == 0
+            
+            # wrong strand should return 0
+            observed = len(list(self.G.features_of_type(key, chrom='chr2L', strand='-', start=9999, stop=100000)))
+            if key == 'gene' or key == 'mRNA':
+                assert observed == 1
+
+            
+            # too far into chrom should return 0
+            observed = len(list(self.G.features_of_type(key, chrom='chr2L', strand='+', start=10000, stop=1e6)))
+            assert observed == 0
+            
+            # reversed start/stop should return 0
+            observed = len(list(self.G.features_of_type(key, chrom='chr2L', start=10000, stop=1)))
+            assert observed == 0
+          
+    def features_test(self):
+        """All featuretypes present and accounted for?"""
+        expected = expected_features[self.featureclass]
+        results = list(self.G.features())
+        assert set(results) == set(expected)
+
+    def strand_test(self):
+        """Expected strands in db?"""
+        assert set(self.G.strands()) == set(['-','+'])
+
+    def chrom_test(self):
+        """Expected chromosomes in db?"""
+        # Get the chromosomes that are in the GFF/GTF file, and make sure
+        # they made it into the database.
+        gffchroms = []
+        for line in open(self.fn):
+            if line.startswith('#'):
+                continue
+            L = line.split()
+            if len(L) < 1:
+                continue
+            gffchroms.append(L[0])
+        assert set(gffchroms) == set(self.G.chromosomes())
+
+    def closest_features_test(self):
+        """Expected closest features returned?"""
+
+        # closest one to the beginning, on plus strand
+        observed_dist, observed_id = self.G.closest_feature(chrom='chr2L', pos=1, featuretype='gene', strand='+', 
+                                                            ignore=None, direction=None)
+        assert observed_id == 'FBgn0031208'
+        
+        # closest one to beginning, ignoring the first one.  Should return None.
+        result = self.G.closest_feature(chrom='chr2L', pos=1, featuretype='gene', strand='+', 
+                                        ignore='FBgn0031208', direction=None)
+        assert result is None
+        
+        # closest mRNA to beginning, on - strand.
+        observed_dist, observed_id = self.G.closest_feature(chrom='chr2L', pos=1, featuretype='mRNA', strand='-', 
+                                                            ignore=None, direction=None)
+
+        assert observed_id == 'transcript_Fk_gene_1'
+
+        # TODO: the GFF/GTF files probably need some more genes added to be
+        # able to test the "upstream" # and "downstream" functionality.
+        
+
+    
     def teardown(self):
         pass
-        #os.remove(testdbfn)
+        os.remove(testdbfn)
 
 class TestGTFDBClass(TestGFFDBClass):
     featureclass = 'GTF'
