@@ -1555,13 +1555,13 @@ class GFFDB:
             within_clause = ' AND start <= %s AND stop >= %s' % (stop,start)
         c = self.conn.cursor()
         c.execute('''
-        SELECT id,chrom,source,featuretype,start,stop,value,strand,phase,attributes
+        SELECT %s chrom,source,featuretype,start,stop,value,strand,phase,attributes
         FROM features WHERE
         chrom = ?
-        %(strand_clause)s
-        %(featuretype_clause)s
-        %(within_clause)s
-        ''' % locals(), (chrom,))
+        %s
+        %s
+        %s
+        ''' % (self.add_id, strand_clause, featuretype_clause, within_clause), (chrom,))
         for i in c:
             yield self.__class__.featureclass(*i)
 
