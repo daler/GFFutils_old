@@ -120,6 +120,8 @@ class GFFFeature(object):
 
     def _parse_attributes(self,attributes):  
         self._strattributes = attributes # keep track of these for later printing out.
+        if attributes is None:
+            self._strattributes = ''
         # parse "attributes" field of the GFF line and insert them into an Attributes 
         # object.
         self.attributes = GFFFeature.Attributes()
@@ -1552,7 +1554,7 @@ class GFFDB:
         if completely_within:
             within_clause = ' AND ((start BETWEEN %s AND %s) AND (stop BETWEEN %s AND %s))' % (start,stop, start,stop)
         else:
-            within_clause = ' AND start <= %s AND stop >= %s' % (stop,start)
+            within_clause = ' AND ((start BETWEEN %s AND %s) OR (stop BETWEEN %s AND %s))' % (start,stop, start,stop)
         c = self.conn.cursor()
         c.execute('''
         SELECT %s chrom,source,featuretype,start,stop,value,strand,phase,attributes
@@ -2115,6 +2117,7 @@ class GFFDB:
         features.featuretype="gene"
         ''', (exonID,))
         return c.fetchone()[0]
+
 
 class GTFDB(GFFDB):
     featureclass = GTFFeature
