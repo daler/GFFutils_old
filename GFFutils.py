@@ -1852,7 +1852,7 @@ class GFFDB:
         for i in cursor:
             yield i
 
-    def refFlat(self, geneID):
+    def refFlat(self, gene):
         """Writes the gene out as a RefFlat format:
             
             geneName altname chrom strand txStart txEnd cdsStart cdsEnd exonCount exonStarts exonEnds
@@ -1866,7 +1866,7 @@ class GFFDB:
             found in the gene.attributes.Name attribute.
         """
         
-        gene = self[geneID]
+        geneID = gene.id
         txStart = gene.start
         txEnd = gene.stop
         exons = []
@@ -1879,14 +1879,17 @@ class GFFDB:
                 exons.append(i)
         
         if len(cdss) == 0:
-            return None
-        cdsStart = min([i.start for i in cdss])
-        cdsEnd = max([i.stop for i in cdss])
+            cdsStart = 'NA'
+            cdsEnd = 'NA'
+        else:
+            cdsStart = min([i.start for i in cdss])
+            cdsEnd = max([i.stop for i in cdss])
 
         def exon_sort(e):
             return e.start
 
         exons.sort(key=exon_sort)
+
 
         exonStarts = ','.join([str(i.start) for i in exons])
         exonEnds = ','.join([str(i.stop) for i in exons])
