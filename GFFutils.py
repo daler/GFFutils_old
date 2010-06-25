@@ -139,7 +139,6 @@ class GFFFeature(object):
                 self.attributes._attrs.append(field)
         
 
-
     @property
     def id(self):
         try:
@@ -354,6 +353,7 @@ class GTFFeature(GFFFeature):
                  value,strand,phase,attributes,strvals=False):
         #print id,chr,source,featuretype,start,stop,value,strand,phase,attributes
         GFFFeature.__init__(self,chr,source,featuretype,start,stop,value,strand,phase,attributes,strvals)
+        self._strattributes = ''
         self.add_attribute('ID',id)
     
     def tostring(self):
@@ -417,7 +417,6 @@ class GTFFeature(GFFFeature):
         self.attributes._attrs.append(attribute)
         assert len(value) == 1, 'Multiple values for one attribute not currently supported for GTF features'
         self._strattributes+=';%s "%s"' % (attribute,value[0])
-    
 
     def remove_attribute(self,attribute):
         """
@@ -1182,7 +1181,6 @@ def create_gtfdb(gtffn, dbfn):
     counter = 0
     c2 = conn.cursor()
     for parent in c:
-
         # Some feedback...
         counter += 1
         perc_done = int(counter/nparents*100)
@@ -1193,6 +1191,12 @@ def create_gtfdb(gtffn, dbfn):
 
         # Find the start and stop limits of this parent's children
         parent = parent[0]
+
+        # parent may be None if there's something funky in the GTF file.
+        if parent is None:
+            continue
+
+
         c2.execute("""
                    select min(start), max(stop), level, strand, chrom FROM features 
                    JOIN relations ON
@@ -2026,7 +2030,20 @@ class GFFDB:
         stop = stop -1 
 
         # Create a new GFFFeature object (or GTFFeature) to return
-        promoter = self.__class__.featureclass(chr=feature.chr,
+        if self.__class__.featureclass == GTFFeature:
+            promoter = self.__class__.featureclass(id='promoter:'+id,
+                                          chr=feature.chr,
+                                          source='imputed',
+                                          featuretype='promoter',
+                                          start=start,
+                                          stop=stop,
+                                          strand=feature.strand,
+                                          value=None,
+                                          phase=None,
+                                          attributes=None)
+     
+        else:
+            promoter = self.__class__.featureclass(chr=feature.chr,
                                               source='imputed',
                                               featuretype='promoter',
                                               start=start,
@@ -2035,7 +2052,7 @@ class GFFDB:
                                               value=None,
                                               phase=None,
                                               attributes=None)
-        promoter.add_attribute('ID','promoter:'+feature.id)
+            promoter.add_attribute('ID','promoter:'+feature.id)
         return promoter
 
     def random_feature(self,featuretype=None):
@@ -2051,15 +2068,18 @@ class GFFDB:
 
         c = self.conn.cursor()
         featuretype_clause = ''
+        featuretype_subclause = ''
         if featuretype is not None:
             featuretype_clause = 'featuretype = "%s" AND ' % featuretype
+            featuretype_subclause = 'WHERE featuretype = "%s"' % featuretype
+            featuretype_subclause = ''
         c.execute('''
         SELECT %s chrom, source, featuretype, start, stop, value, strand, phase, attributes 
         FROM features
         WHERE 
         %s
-        rowid >= abs(random()) %% (SELECT MAX(rowid) FROM features) LIMIT 1
-        ''' % (self.__class__.add_id, featuretype_clause))
+        rowid >= abs(random()) %% (SELECT count() FROM features %s) LIMIT 1
+        ''' % (self.__class__.add_id, featuretype_clause, featuretype_subclause))
         results = c.fetchone()
         return self.__class__.featureclass(*results)
         
@@ -2074,7 +2094,6 @@ class GFFDB:
             for grandchild in self.children(g.id, level=2):
                 if grandchild.featuretype == 'CDS':
                     yield g
-                    break
     
     def n_gene_isoforms(self, geneID):
         """
