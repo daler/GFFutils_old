@@ -1303,11 +1303,32 @@ class GFFDB:
     def __getitem__(self,id):
         c = self.conn.cursor()
         c.execute('''
-                  SELECT %s chrom, source, featuretype, start, stop, value, strand, phase, attributes from features where id = ?
+                  SELECT %s chrom, source, featuretype, start, stop, value,
+                  strand, phase, attributes from features where id = ?
                   ''' % self.__class__.add_id, (id,))
         results = c.fetchall()
         assert len(results) == 1, len(results)
         return self.__class__.featureclass(*results[0])
+
+    def fuzzy_lookup(self,text,featuretype):
+        """
+        Looks for *text* within the "attributes" field of features of
+        *featuretype*.  Useful for looking up genes based on symbol or name
+        rather than accession number.  Returns a list of matching GFFFeatures.
+
+        Uses SQL's LIKE operator, which is case-insensitive.
+        """
+        text = '%'+text+'%'
+        c = self.conn.cursor()
+        c.execute('''
+                  SELECT %s chrom, source, featuretype, start, stop, value,
+                  strand, phase, attributes from features where attributes
+                  like "%s" and featuretype = ?
+                  ''' % (self.__class__.add_id, text),(featuretype,))
+        results = []
+        for result in c.fetchall():
+            results.append(self.__class__.featureclass(*result))
+        return results
 
     def features_of_type(self, featuretype, chrom=None, start=None, stop=None, strand=None):
         """
@@ -2139,6 +2160,7 @@ class GFFDB:
         features.featuretype="gene"
         ''', (exonID,))
         return c.fetchone()[0]
+
 
 
 class GTFDB(GFFDB):
