@@ -474,16 +474,6 @@ class GTFFile(GFFFile):
     def __repr__(self):
         return 'GTFFile object (file=%s)' % (self.file)
 
-def gtf2gff3(gtf, gff):
-    """
-    Calls the perl script.
-    """
-    perlscript = os.path.join(exe_path,'..','scripts','gtf2gff3.pl')
-    perlscript = os.path.abspath(perlscript)
-    cmd = [perlscript, gtf,'>', gff]
-    p = subprocess.call(cmd).communicate()
-    #os.system(' '.join(cmd))
-
 class Genome:
     """
     Wrapper class for quickly getting a sequence within a chromosome. Inspired by ERANGE.
@@ -568,217 +558,6 @@ class Genome:
         self.mmap.seek(start)
         seq = self.mmap.read(length+newlines)
         return seq.replace('\n','')
-
-#TODO . . . stopped working here.
-def splicejunctions(genomefasta, gffdbfn, splicewidth, gene=None, transcript=None):
-    """
-    Returns an iterator of dictionaries containing splice junction sequences. 
-    
-    Width of splice junctions is determined by *splicewidth*. 
-
-    Needs as input a FASTA file of the genome (*genomefasta*) which will be memory-mapped, 
-    and a GFF database that GFFDB can use (*gffdbfn*)
-
-    If an ID for *gene* is provided, only that gene's transcripts' splice junctions will be returned.
-    If an ID for *transcript* is provided, only that transcript's splice junctions will be returned.
-    
-    Each dictionary returned has two keys, 'gene' and 'transcript'.  'gene' contains the gene name, and
-    'transcripts' contains a dictionary of transcripts, each of which contain a list of splice junction 
-    sequences::
-
-        d = {gene='FBgnNNNN',
-             transcripts = {FBtrNNNN1=['ATCGCGTTGC','ACGCGCGCGT', 'CCCCTTTTAACT'],
-                            FBtrNNNN2=['CTCGCGCTCC','CCCCACACAA', 'CGCCGTCTGACC'],
-            }
-
-    Splices are reverse-complemented if on the minus strand.
-    """
-
-    G = GFFDB(gffdbfn)
-    genome = Genome(genomefasta)
-    
-    d = {}
-    if gene is not None:
-        child_transcripts = G.children(gene)
-
-        for child in child_transcripts:
-            if child.featuretype != 'mRNA':
-                continue
-            exons = [i for i in G.children(child) if i.featuretype=='exon']
-            
-            #exons should already be sorted upon return from database
-
-            for i in exons:
-                for j in exons:
-                    part1_start = i.stop - halfwidth
-                    part1_stop = i.stop
-                    part1_seq = genome.sequence(chrom,part1_start,part1_stop)
-                    part2_start = j.start
-                    part2_stop = j.start + halfwidth
-                    part2_seq = genome.sequence(chrom,part2_start,part2_stop)
-                    splice_seq = part1_seq + part2_seq
-                    
-            
-
-def splices(seqfile,gffdbfn,readlen,fout):
-    """
-    Currently writes splices out to a file.  Would be cool if you could iterate
-    through splices from DB.
-
-    seqfile is a fasta-formatted file with the original chromosome sequences.
-
-    gffdbfn is the filename of a gff database populated by gffdb()
-
-    readlen is the length of reads
-
-    fout can either be a string or a file-like object.
-    """
-    separator = ':'
-    close_fout = False
-    if type(fout) is str:
-        close_fout = True
-        fout = open(fout,'w')
-
-    GFF = GFFDB(gffdbfn)
-    genome = Genome(seqfile)
-    transcripts = GFF.features_of_type('mRNA')
-    buffer = 4
-    splice_halfwidth = readlen/2 + buffer
-    transtable = string.maketrans("ATCG", "TAGC")
-    for t in transcripts:
-        chrom = t.chr
-        strand = t.strand
-        exons = list(GFF.children(t.id))
-        if len(exons) == 1:
-            continue # no splices, so no splice junctions
-
-        if strand == '+':
-            for i in range(len(exons)-1):
-                splicestart1 = exons[i].stop - splice_halfwidth
-                splicestop1 = exons[i].stop
-                seq1 = genome.sequence(chrom,splicestart1,splicestop1)
-                splicestart2 = exons[i+1].start
-                splicestop2 = exons[i+1].start + splice_halfwidth + buffer
-                seq2 = genome.sequence(chrom,splicestart2, splicestop2)
-                description = '>%s%s%s%s%s' % (t.id, separator, exons[i].id, separator, exons[i+1].id)
-                seq = 'NN' + seq1 + seq2 + 'NN'
-                fout.write(description+'\n')
-                fout.write(seq+'\n')  
-
-        if strand == '-':
-            for i in range(1,len(exons)):
-                splicestart1 = exons[-i-1].stop - splice_halfwidth
-                splicestop1 = exons[-i-1].stop
-                seq1 = genome.sequence(chrom,splicestart1,splicestop1)
-                splicestart2 = exons[-i].start
-                splicestop2 = exons[-i].start + splice_halfwidth + buffer
-                seq2 = genome.sequence(chrom,splicestart2, splicestop2)
-                seq = 'NN' + seq1 + seq2 + 'NN'
-                seq.translate(transtable)[::-1]
-                description = '>%s%s%s%s%s' % (t.id, separator, exons[-i-1].id, separator, exons[-i].id)
-                seq = 'NN' + seq1 + seq2 + 'NN'
-                fout.write(description+'\n')
-                fout.write(seq+'\n')  
-       
-        if close_fout:
-            fout.close()
-
-def merge_features(features, ignore_strand=False):
-    """
-    *features* is an iterable of features that you want to merge together.
-
-    Will be converted into a list because it needs to sort the features.
-
-    Returns an iterator of the merged features.
-
-    *features* must be all on the same strand.  The new *featuretype* will be a 
-    joining of the various featuretypes that were provided.
-
-    If *ignore_strand* is True, strand will be forced to all '+' and no checking
-    will be done on the input
-    """
-    # If it quacks like an iterator...then turn it into a list.
-    if hasattr(features,'next'):
-        features = list(features)
-    
-    # Quick function to sort by start position
-    def start_pos(x):
-        return x.start
-    
-    # Sort 'em by start position
-    features.sort(key=start_pos)
-    
-    # Not sure how to deal with multiple strands...
-    if not ignore_strand:
-        strands = [i.strand for i in features]
-        if len(set(strands))!= 1:
-            raise NotImplementedError, 'Merging multiple strands not implemented yet'
-        strand = strands[0]
-    else:
-        strand = '+'
-    
-    # ...or multiple chromosomes
-    chroms = [i.chr for i in features]
-    if len(set(chroms)) != 1:
-        raise NotImplementedError, 'Merging multiple chromosomes not implemented yet'
-    chrom = chroms[0]
-
-    # If they were all exons, merged objects will have featuretype
-    # 'merged_exon'.  If features included both exon and CDS, will have
-    # featuretype 'merged_exon_CDS'.
-
-    featuretypes = list(set([i.featuretype for i in features]))
-    featuretypes.sort()
-    featuretypes = '_'.join(featuretypes)
-    featuretype = 'merged_%s' % featuretypes
-
-    for i,feature in enumerate(features):
-        if i == 0:
-            current_merged_start = feature.start
-            current_merged_stop = feature.stop
-            continue
-        # Does this feature start within the currently merged feature?...
-        if feature.start <= current_merged_stop+1:
-            # ...It starts within, so leave current_merged_start where it
-            # is.  Does it extend any farther?
-            if feature.stop >= current_merged_stop:
-                # Extends further, so set a new stop position
-                current_merged_stop = feature.stop
-            else: 
-                # If feature.stop < current_merged_stop, it's completely
-                # within the previous feature.  Nothing more to do.
-                continue
-        else:
-            # The start position is within the merged feature, so we're done with 
-            # the current merged feature.  Prepare for output...
-
-            merged_feature = GFFFeature(chr=feature.chr,
-                                     source=None,
-                                     featuretype=featuretype,
-                                     start=current_merged_start,
-                                     stop=current_merged_stop,
-                                     value=None,
-                                     strand=strand,
-                                     phase=None,
-                                     attributes=None)
-            yield merged_feature
-
-            # and we start a new one, initializing with this feature's start and stop.
-            current_merged_start = feature.start
-            current_merged_stop = feature.stop
-
-    # need to yield the last one.
-    #Feature = feature.__class__
-    merged_feature = GFFFeature(chr=feature.chr,
-                             source=None,
-                             featuretype=featuretype,
-                             start=current_merged_start,
-                             stop=current_merged_stop,
-                             value=None,
-                             strand=strand,
-                             phase=None,
-                             attributes=None)
-    yield merged_feature            
 
 def intersect(features1, features2,ignore_strand=False):
     """
@@ -1301,6 +1080,8 @@ class GFFDB:
         self.conn.text_factory = str
 
     def __getitem__(self,id):
+        if type(id) is not str:
+            id = id.id
         c = self.conn.cursor()
         c.execute('''
                   SELECT %s chrom, source, featuretype, start, stop, value,
@@ -1310,7 +1091,7 @@ class GFFDB:
         assert len(results) == 1, len(results)
         return self.__class__.featureclass(*results[0])
 
-    def fuzzy_lookup(self,text,featuretype):
+    def attribute_search(self,text,featuretype='gene'):
         """
         Looks for *text* within the "attributes" field of features of
         *featuretype*.  Useful for looking up genes based on symbol or name
@@ -1555,8 +1336,8 @@ class GFFDB:
     def overlapping_features(self,chrom,start,stop,featuretype=None,strand=None, completely_within=False):
         """
         Returns an iterator of features of type *featuretype* that overlap the
-        feature with ID *id*. If *featuretype* is None (default), then all
-        features will be returned.
+        coords provided. If *featuretype* is None (default), then all features
+        will be returned.
 
         If *ignore_strand* is True, features of any strand will be returned.
         If *ignore_strand* is False (default) then only return overlapping
@@ -1760,71 +1541,16 @@ class GFFDB:
         ''')
         return [i[0] for i in c.fetchall()]
  
-    def attach_children(self,feature):
-        '''
-        Adds a new attribute to GFFFeature objects, children.  This is a list of GFFFeatures
-        that are the children of the transcript.  This also adds "introns" as children.
-
-        Returns an iterator, of length 1 if *id* was a transcript, or of length equal to number of
-        child transcripts'''
-         
-        def sortfunc(x):
-            return x.start
-        
-        if feature.featuretype == 'gene':
-            raise NotImplementedError,'not sure how to deal with genes yet'
-        
-        children = list(self.children(feature.id))
-        
-        # CDSs are duplicated as 'exons'.  So remove the exons from the
-        # list of children.
-        
-        # annoying: some, but not all, exons are duplicated as CDSs.  Remove
-        # the exons that have the same start/stop as CDSs.
-             
-        CDScoords = [(i.start,i.stop) for i in children if i.featuretype=='CDS']
-        new_children = []
-        for child in children:
-            if child.featuretype == 'exon':
-                if (child.start,child.stop) in CDScoords:
-                    continue
-            new_children.append(child)
-
-        children = new_children
-
-        if feature.featuretype == 'mRNA':
-            children_for_intron_calc = [i for i in children if i.featuretype != 'CDS']
-        else:
-            children_for_intron_calc = children
-
-        children_for_intron_calc.sort(key=sortfunc)
-        # construct introns:
-        exons = [ (i.start,i.stop) for i in children_for_intron_calc ]
-        for i in range(len(exons)-1):
-            thisstart,thisstop = exons[i]
-            nextstart,nextstop = exons[i+1]
-            intron = GFFFeature(chr=feature.chr,
-                                source='imputed',
-                                featuretype='intron',
-                                start=thisstop+1,
-                                stop=nextstart-1,
-                                value=None,
-                                strand=feature.strand,
-                                phase=None,
-                                attributes=None)
-            children.append( intron )
-            
-        # sort children by increasing start position.
-        children.sort(key=sortfunc)
-        feature.children = children
-        return feature
-   
     def children(self,id,level=1,featuretype=None):
         '''Returns an iterator of the children *level* levels away.  Immediate
         children are level=1; "grandchildren" are level=2.  The child
         transcripts of a gene will be at level=1; the child exons of the same
         gene are at level=2.  Returns an error if there are not enough levels
         of children for the level specified.'''
+
+        if type(id) is not str:
+            id = id.id
+
         cursor = self.conn.cursor()
 
         featuretype_clause = ''
@@ -1849,6 +1575,10 @@ class GFFDB:
         transcripts of a gene will be at level=1; the child exons of the same
         gene are at level=2.  Returns an error if there are not enough levels
         of children for the level specified.'''
+
+        if type(id) is not str:
+            id = id.id
+
         cursor = self.conn.cursor()
         featuretype_clause = ''
         if featuretype is not None:
@@ -1977,8 +1707,12 @@ class GFFDB:
         checking the upper boundary is the responsibility of the calling
         function.
         """
+        if type(id) is not str:
+            feature = self[id]
+        else:
+            feature = id
+
         c = self.conn.cursor()
-        feature = self[id]
         
         if truncate_at_next_feature is not None:
             # Locate closest feature.  Different strands have different queries:
@@ -2120,6 +1854,9 @@ class GFFDB:
         """
         Returns the number of isoforms that this gene has.
         """
+        if type(geneID) is not str:
+            geneID = geneID.id
+
         n = 0
         for i in self.children(geneID, level=1, featuretype='mRNA'):
             n += 1
@@ -2129,6 +1866,10 @@ class GFFDB:
         """
         Returns the number of isoforms that this exon is found in.
         """
+
+        if type(exonID) is not str:
+            exonID = exonID.id
+
         c = self.conn.cursor()
         c.execute('''
         SELECT count() FROM relations 
@@ -2148,6 +1889,10 @@ class GFFDB:
         method that doesn't do the type conversion or sorting of
         self.parents().
         """
+
+        if type(exonID) is not str:
+            exonID = exonID.id
+
         c = self.conn.cursor()
         c.execute('''
         SELECT parent FROM relations
@@ -2160,8 +1905,6 @@ class GFFDB:
         features.featuretype="gene"
         ''', (exonID,))
         return c.fetchone()[0]
-
-
 
 class GTFDB(GFFDB):
     featureclass = GTFFeature
