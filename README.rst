@@ -53,16 +53,16 @@ directory in order to filter out features that may not be of interest.
 Assuming you have a cleaned-up GFF file, here's how to create a GFF database
 from either a Python script or a Python shell::
 
-    import GFFutils
+    >>> import GFFutils
     
     # downloaded from, e.g., FlyBase
-    gff_filename = '/data/annotations/dm3.gff'
+    >>> gff_filename = '/data/annotations/dm3.gff'
     
     # the database that will be created
-    db_filename = '/data/dm3.db'
+    >>> db_filename = '/data/dm3.db'
     
     # do it! (this will take several minutes to run)
-    GFFutils.create_gffdb(gfffn, db_filename)
+    >>> GFFutils.create_gffdb(gfffn, db_filename)
 
 Now ``dm3.db`` is the sqlite3 database that can be used in all sorts of
 weird and wonderful ways, outlined below.
@@ -102,11 +102,7 @@ Using the database interactively
 --------------------------------
 First, wrap your new database in a ``GFFDB`` object::
 
-    import GFFutils
-
-    # Set up a GFFDB object, telling it the filename of your database as 
-    # created above
-    G = GFFutils.GFFDB('dm3.db')
+    >>> G = GFFutils.GFFDB('dm3.db')
 
 From now on we'll be accessing the database using this new object, ``G``, which
 is a ``GFFutils.GFFDB`` object.
@@ -147,7 +143,7 @@ Method 1: Use iterator in a for-loop (preferred)::
 
     >>> featuretype_iterator = G.features()
     >>> for featuretype in featuretype_iterator:
-    ...    print featuretype
+    ...     print featuretype
 
 Method 2: Call ``next()`` incrementally on the iterator.  This is the most
 awkward, but may sometimes be useful::
@@ -211,7 +207,7 @@ in memory at a time, which is the advantage of iterators . . . ::
 
     >>> gene_count = 0
     >>> for gene in G.features_of_type('gene'):
-    ...    gene_count += 1
+    ...     gene_count += 1
     >>> print gene_count
     
 This is something I found myself doing quite often, so there's a shortcut method
@@ -247,14 +243,14 @@ up to you to figure out if the search returned the results you expected.
 
 I found myself getting a gene to play around with by doing this::
 
-    g = G.features_of_type('gene').next()
+    >>> g = G.features_of_type('gene').next()
 
 However, this always returns the same gene.  For better testing, there's a
 ``random_feature()`` method that chooses a random feature out of the database.
 You can specify a featuretype if you'd like; otherwise you have a chance of
 getting any feature that was in the GFF file::
 
-    g = G.random_feature('gene')
+    >>> g = G.random_feature('gene')
 
 GFFFeatures in more detail
 --------------------------
@@ -264,12 +260,12 @@ you query the database for a feature.
 Just to make sure we're on the same page, here's the setup for this
 section::
 
-    import GFFutils
-    G = GFFutils.GFFDB('dm3.db')
+    >>> import GFFutils
+    >>> G = GFFutils.GFFDB('dm3.db')
 
 Let's get a single ``GFFFeature`` to work with::
 
-    gene = G.random_feature('gene')
+    >>> gene = G.random_feature('gene')
 
 ``GFFFeature`` objects, when printed, show useful information::
 
@@ -351,13 +347,13 @@ Or the DBxref (database cross-reference) for the gene with::
 You now know enough to be able to generate a line for a BED-format file (note
 subtracting 1 from the start to convert to BED format's zero-based start)::
 
-    line = '%s\t%s\t%s\t%s\t%s\t%s\n' % (gene.chr, 
-                                         gene.start-1, 
-                                         gene.stop, 
-                                         gene.id, 
-                                         gene.value, 
-                                         gene.strand)
-    print line
+    >>>line = '%s\t%s\t%s\t%s\t%s\t%s\n' % (gene.chr, 
+    ...                                     gene.start-1, 
+    ...                                     gene.stop, 
+    ...                                     gene.id, 
+    ...                                     gene.value, 
+    ...                                     gene.strand)
+    >>> print line
 
 But ``GFFFeature`` objects have a convenience function,
 ``to_bed()``, which also accepts a number from 3 to 6 so you can tell it
@@ -365,10 +361,10 @@ how many BED fields you want returned (3 fields is the default).
 
 So you could write a BED file of all the genes like so::
 
-    fout = open('genes.bed','w')  # open a file for writing
-    for i in G.features_of_type('gene'):
-        fout.write(i.to_bed())
-    fout.close()
+    >>> fout = open('genes.bed','w')  # open a file for writing
+    >>> for i in G.features_of_type('gene'):
+    ...     fout.write(i.to_bed())
+    >>> fout.close()
 
 While convenient, this same functionality is possible with commandline tools operating on the original GFF file::
 
@@ -381,16 +377,16 @@ Other useful things in ``GFFFeature`` objects:
 
 Reconstruct the GFF line for this feature, and automatically add a newline::
 
-    feature.tostring()
+    >>> feature.tostring()
 
 Get the transcription start site of the feature.  Note that all features have a
 ``TSS`` property, not just genes.  It is simply the feature start position if it's on the "+" strand or the feature stop position if it's on the "-" strand::
 
-    feature.TSS
+    >>> feature.TSS
 
 Get the midpoint of the feature::
 
-    feature.midpoint
+    >>> feature.midpoint
 
 See the `Examples`_ below for more info on this.
 
@@ -398,11 +394,11 @@ Navigating the hierarchy of features
 ------------------------------------
 Here's how to find the transcripts belonging to a gene.  The
 ``GFFFeature.children()`` and ``GFFFeature.parents()`` methods need a
-feature ID as an argument, which is stored in the :attr:`GFFFeature.id`
+feature ID as an argument, which is stored in the ``GFFFeature.id``
 attribute::
 
-    for i in G.children(gene.id):
-        print i
+    >>> for i in G.children(gene.id):
+    ...     print i
 
 Here's how to find the exons belonging to a gene.  By default, level=1,
 which means a 'hierarchy distance' of 1 (direct parent/children).  level=2
@@ -410,30 +406,30 @@ is analagous to grandparent/grandchild, which is used for the relationship
 between genes/exons.  level=3 not currently implemented (not clear where it
 would be used)::
 
-    for i in G.children(gene_name, level=2):
-        print i
+    >>> for i in G.children(gene_name, level=2):
+    ...     print i
 
 Note that, depending on your GFF file, you may have more than just exons as
 the children of genes (e.g., 3' UTRs, introns, 5' UTRs).  If you just want
 the exons, then you can filter by feature type::
 
-    for i in G.children(gene.id, level=2):
-        if i.featuretype == 'exon':
-            print i
+    >>> for i in G.children(gene.id, level=2):
+    ...     if i.featuretype == 'exon':
+    ...         print i
 
 File format conversions
 -----------------------
 
 Converting features to BED files was described above; briefly::
 
-    fout = open('genes.bed','w')
-    for gene in G.features_of_type('gene'):
-        fout.write(gene.to_bed())
-    fout.close()
+    >>> fout = open('genes.bed','w')
+    >>> for gene in G.features_of_type('gene'):
+    ...     fout.write(gene.to_bed())
+    >>> fout.close()
 
 Exporting a refFlat entry for one gene::
 
-    print G.refFlat(gene_name)
+    >>> print G.refFlat(gene_name)
 
 Now create a new file, writing a refFlat entry for each gene.  Note that the
 ``refFlat()`` method is set up such that it will return ``None`` if there
@@ -442,21 +438,20 @@ but do want to keep track of them.
 
 This will take a few seconds to run::
     
-    missing_cds = []
-    fout = open('mydatabase.refFlat','w')
-    for gene in G.features_of_type('gene'):
-        rflt = G.refFlat(gene.id)
-        if rflt is not None:
-            fout.write(rflt)
-        else:
-            missing_cds.append(gene)
-
-    fout.close()
+    >>> missing_cds = []
+    >>> fout = open('mydatabase.refFlat','w')
+    >>> for gene in G.features_of_type('gene'):
+    ...     rflt = G.refFlat(gene.id)
+    ...     if rflt is not None:
+    ...         fout.write(rflt)
+    ...     else:
+    ...         missing_cds.append(gene)
+    >>> fout.close()
 
 So, what were those genes that didn't have CDSs?  Check the first 25::
     
-    for g in missing_cds[:25]:
-        print g.attributes.Name[0]
+    >>> for g in missing_cds[:25]:
+    ...     print g.attributes.Name[0]
 
 A bunch of snoRNAs, tRNAs, etc.
 
@@ -466,11 +461,11 @@ makes it very easy to write new GFF files containing a subset of the
 features in the original GFF file::
 
     # new GFF file with genes > 5kb
-    fout = open('big-genes.gff','w')
-    for gene in G.features_of_type('gene'):
-        if len(gene) < 5000:
-            fout.write(gene.tostring())
-    fout.close()
+    >>> fout = open('big-genes.gff','w')
+    >>> for gene in G.features_of_type('gene'):
+    ...     if len(gene) < 5000:
+    ...         fout.write(gene.tostring())
+    >>> fout.close()
     
 
 Examples
@@ -483,7 +478,7 @@ In each case, assume the following setup::
     G = GFFutils.GFFDB('dm3.db')
 
 Inspecting the database
------------------------
+~~~~~~~~~~~~~~~~~~~~~~~
 ::
   
     print G.chromosomes()
@@ -600,7 +595,7 @@ BED file of all exonic bases on chr2L
     fout.close()
 
 Closest features
-----------------
+~~~~~~~~~~~~~~~~
 
 Get the closest gene (ignoring the gene you supply) and how far away it is::
 
@@ -624,7 +619,7 @@ supply::
                                                direction='upstream')
 
 Overlapping features
---------------------
+~~~~~~~~~~~~~~~~~~~~
 
 Get the exons in the first MB of chr2L that are on the plus strand::
 
@@ -637,7 +632,7 @@ Get the exons in the first MB of chr2L that are on the plus strand::
 
 
 Merging features
-----------------
+~~~~~~~~~~~~~~~~
 This is useful if you want to get a "meta-exon" feature that is all exons
 together.  For example, say you have a gene with two isoforms, and you want to
 merge the exons together to get merged exons to indicate the presence of an
@@ -666,7 +661,7 @@ Code::
 
 
 Imputing introns
-----------------
+~~~~~~~~~~~~~~~~
 Sometimes a GFF file doesn't explicitly include introns as features.  You can
 construct them using the ``interfeatures()`` method.  This is a pretty
 barebones method, so you'll have to add your own IDs and featuretypes after you
@@ -684,7 +679,7 @@ have the introns created.
 
 
 Promoter regions
-----------------
+~~~~~~~~~~~~~~~~
 
 Promoter regions, 1kb upstream and downstream of a gene's TSS::
 
@@ -701,14 +696,14 @@ Promoter region defined as 2kb upstream::
     promoter.stop - g.TSS
 
 Coding genes
-------------
+~~~~~~~~~~~~
 Useful for excluding tRNAs, rRNAs, etc . . . this returns a generator of all
 genes that have a CDS annotated as a child of level 2::
 
     we_make_proteins = G.coding_genes()
 
 Isoform counts
---------------
+~~~~~~~~~~~~~~
 Useful for getting constitutive exons (exons found in all isoforms of a gene)::
 
     g = G.random_feature('gene')
@@ -718,7 +713,7 @@ Useful for getting constitutive exons (exons found in all isoforms of a gene)::
             print exon.id, 'is found in all isoforms of', g.id
 
 Arbitrary SQL commands
-----------------------
+~~~~~~~~~~~~~~~~~~~~~~
 Note that this places a lot of trust in the user to not mess up the database!
 
 Things at the beginning of chromosomes::
