@@ -22,7 +22,7 @@ A by-product of structuring a GFF file in this way is that it is easy to
 convert to something like a refFlat format -- use the ``GFFDB.refFlat()``
 method for this.
 
-See the **Examples** below to jump right in, done, or follow along for a
+See the **Examples** below to jump right in, or follow along for a
 step-by-step introduction.
 
 Installation
@@ -36,8 +36,8 @@ priveliges)::
 Now you're ready to create a GFF database and interact with it from a
 Python shell like IPython.
 
-Creating a GFFDB
-----------------
+Preparing to use GFFutils
+-------------------------
 For each GFF file you would like to use you need to create a GFF database.
 This database is stored in a file, and is simply a sqlite3 database.  You
 only have to do this once for each GFF file.  As long as you don't delete
@@ -47,8 +47,11 @@ step again.
 The database will take roughly twice as much hard drive space as the
 original text file.  This is the cost of interactivity and fast lookups.
 
-You will need a GFF file to import.  From either a Python script or a Python
-shell::
+You will need a GFF file to import.  If you're using a FlyBase GFF file, you
+might want to take a look at the script ``GFF_cleaner.py`` in the scripts
+directory in order to filter out features that may not be of interest.
+Assuming you have a cleaned-up GFF file, here's how to create a GFF database
+from either a Python script or a Python shell::
 
     import GFFutils
     
@@ -67,8 +70,8 @@ weird and wonderful ways, outlined below.
 You can find more information on exactly what's going on in the "Strategy"
 section below.
 
-For power users, you can of course work on the database directly. Here's the
-schema::
+For power users, you can of course work on the sqlite3 database directly.
+Here's the schema::
 
     CREATE TABLE features (
                                 id text, 
@@ -104,50 +107,60 @@ First, wrap your new database in a ``GFFDB`` object::
     # Set up a GFFDB object, telling it the filename of your database as 
     # created above
     G = GFFutils.GFFDB('dm3.db')
-    
-.. note::
-   
-    For performance, most of the ``GFFDB`` class methods return iterators.  In
-    practice, you will need to either convert them to a list or iterate through
-    them in a list comprehension or a for-loop.  You can also grab the next item
-    in an iterator with its ``.next()`` method.  All four ways of getting info
-    from an iterator are shown below in the examples.
+
+From now on we'll be accessing the database using this new object, ``G``, which
+is a ``GFFutils.GFFDB`` object.
+
+The next couple of sections will take the form of a tutorial. If you're itching
+to get your hands dirty, all the methods should be documented so you can
+explore the object interactively.  You might want to peek at the examples
+below, too.
+
 
 Identifying what's in the database
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 What sorts of features are in the db?  The ``GFFDB.features`` method
 returns an iterator of the featuretypes that were in the GFF file (and
 which are now in the ``featuretype`` field of the sqlite3 database, which
-this method accesses).  
+this method accesses).
 
-Most methods in a ``GFFDB`` object return iterators for performance.
+Most methods in a ``GFFDB`` object return generators for performance.
 
-Since this is the first example of using the iterators returned by a
-``GFFDB`` object, here are a few different ways to get the results
-from the iterator it returns.
+.. note::
    
-Method 0: Convert iterator to a list::
+    For performance, most of the ``GFFDB`` class methods return generators.  In
+    practice, you will need to either convert them to a list or iterate through
+    them in a list comprehension or a for-loop.  You can also grab the next
+    item in an iterator with its ``.next()`` method.  All four ways of getting
+    info from a generator object are shown below in the examples.
 
-    featuretype_iterator = G.features()
-    featuretypes = list(featuretype_iterator)
+Since this is the first example of using the iterators returned by a ``GFFDB``
+object, here are a few different ways to get the results from the iterator it
+returns.
+   
+Method 0: Convert iterator to a list.  This is the most memory-intensive::
+
+    >>> featuretype_iterator = G.features()
+    >>> featuretypes = list(featuretype_iterator)
 
 Method 1: Use iterator in a for-loop (preferred)::
 
-    featuretype_iterator = G.features()
-    for featuretype in featuretype_iterator:
-        print featuretype
+    >>> featuretype_iterator = G.features()
+    >>> for featuretype in featuretype_iterator:
+    ...    print featuretype
 
-Method 2: Call ``next()`` incrementally on the iterator::
+Method 2: Call ``next()`` incrementally on the iterator.  This is the most
+awkward, but may sometimes be useful::
 
-    featuretype_iterator = G.features()
-    featuretype_1 = featuretype_iterator.next()
-    featuretype_2 = featuretype_iterator.next()
-    featuretype_3 = featuretype_iterator.next()
-    featuretype_4 = featuretype_iterator.next()
+    >>> featuretype_iterator = G.features()
+    >>> featuretype_1 = featuretype_iterator.next()
+    >>> featuretype_2 = featuretype_iterator.next()
+    >>> featuretype_3 = featuretype_iterator.next()
+    >>> featuretype_4 = featuretype_iterator.next()
     ...
     ...
 
-    featuretypes = [featuretype1, featuretype2, ...]
+    >>> featuretypes = [featuretype1, featuretype2, ...]
 
 It's mostly a matter of preference which method you use.  However, using
 the for-loop approach is most memory-efficient, since only a single
@@ -158,6 +171,8 @@ iterating through featuretypes (of which there are usually <50; typically
 In any case, we get something like the following.  What you see on your screen
 depends entirely on the GFF file that you created your database from::
     
+    >>> print featuretypes
+
     ['BAC_cloned_genomic_insert',
      'CDS',
      'DNA_motif',
@@ -194,26 +209,41 @@ genes there were. In this method, we're not bringing ALL the genes into a giant
 list -- we'll just increment a counter.  Only a single ``GFFFeature`` object is
 in memory at a time, which is the advantage of iterators . . . ::
 
-    gene_count = 0
-    for gene in G.features_of_type('gene'):
-        gene_count += 1
-    print gene_count
+    >>> gene_count = 0
+    >>> for gene in G.features_of_type('gene'):
+    ...    gene_count += 1
+    >>> print gene_count
     
 This is something I found myself doing quite often, so there's a shortcut method
 that just does a ``count()`` in the SQL directly.  Use it like this::
 
-    gene_count = G.count_features_of_type('gene')
+    >>> gene_count = G.count_features_of_type('gene')
 
 Feature types not found in the db will not return an error (maybe
 they should, eventually?); they just don't return anything::
 
-    ncabbages = G.count_features_of_type('cabbage')
-    print ncabbages  # zero cabbages.
+    >>> ncabbages = G.count_features_of_type('cabbage')
+    >>> print ncabbages  # zero cabbages.
 
 Already know the ID of a feature?  Get the ``GFFFeature`` object
 for that gene directly like this::
 
-    my_favorite_feature = G['FBgn0002121']
+    >>> my_favorite_feature = G['FBgn0002121']
+
+The ID of a feature can be hard to remember.  The name of a gene is often much
+easier to search by.  However, GFF files are not consistent in how they store
+the name of a gene (for example, FlyBase GFF files have one name stored in the
+Name attribute, while others may be stored in the Alias attribute).  Nevertheless, 
+there's a way to get named genes if the name is somewhere in the attributes field::
+
+    >>> candidates = G.attribute_search('Rm62')
+    >>> assert len(candidates) == 1
+    >>> my_favorite_gene = candidates[0]
+
+This searches the attributes of all features of genes for the text 'Rm62'; the
+search is case-insensitive.  Note that you get a list as a return value; that's
+because there may be more than one gene with that text in the attributes; it's
+up to you to figure out if the search returned the results you expected.
 
 I found myself getting a gene to play around with by doing this::
 
@@ -228,6 +258,9 @@ getting any feature that was in the GFF file::
 
 GFFFeatures in more detail
 --------------------------
+This section discusses ``GFFFeatures`` which are the things you get back when
+you query the database for a feature.
+
 Just to make sure we're on the same page, here's the setup for this
 section::
 
@@ -248,51 +281,71 @@ Let's get a single ``GFFFeature`` to work with::
 ``GFFFeature`` objects have an attribute, ``id``, which contains the
 accession in the attributes field of the original GFF file::
 
-    print gene.id
-
+    >>> print gene.id
     'FBgn0031208'
 
 They also have many other properties::
 
-    print gene.start
-    print gene.stop
-    print gene.chr
-    print gene.featuretype
-    print gene.strand
+    >>> gene.start
+    7529
+
+    >>> gene.stop
+    9484
+
+    >>> gene.chr
+    'chr2L'
+    
+    >>> gene.featuretype
+    'gene'
+
+    >>> gene.strand
+    '+'
 
 
 You can get the length of a gene with::
 
-    gene_len = gene.stop - gene.start
+    >>> gene_len = gene.stop - gene.start
 
 or you can use the perhaps-more-convenient::
 
-    gene_len = len(gene)
+    >>> gene_len = len(gene)
 
 In a ``GFFFeature`` object, the ``GFFFeature.attributes`` 
 attribute holds all the info that was in the attributes column of your GFF
 file.  This will vary based on what was in your original GFF file.  You can
 get a list of this with::
     
-    print gene.attributes._attrs
+    >>> print gene.attributes._attrs
 
 and you can access any of the attributes with a dot, then the attribute name.
-For example, in the GFF file I used, the above code returned the following
+For example, in the GFF file I used, since the above code returned the following
 available attributes::
 
     ['ID', 'Name', 'Ontology_term', 'Dbxref', 'derived_computed_cyto', 'gbunit']
 
-So we could get the ontology terms for this gene with::
+then we could get the ontology terms for this gene with::
 
-    print gene.attributes.Ontology_term
-
-which shows something like::
-
+    >>> gene.attributes.Ontology_term
     ['SO:0000010', 'SO:0000087', 'GO:0008234', 'GO:0006508']   
 
 Or the DBxref (database cross-reference) for the gene with::
 
-    print gene.attributes.Dbxref
+    >>> gene.attributes.Dbxref
+    ['FlyBase:FBan0011023',
+     'FlyBase_Annotation_IDs:CG11023',
+     'GB_protein:ACZ94128',
+     'GB_protein:AAO41164',
+     'GB:AI944728',
+     'GB:AJ564667',
+     'GB_protein:CAD92822',
+     'GB:BF495604',
+     'UniProt/TrEMBL:Q6KEV3',
+     'UniProt/TrEMBL:Q86BM6',
+     'INTERPRO:IPR003653',
+     'EntrezGene:33155',
+     'BIOGRID:59420',
+     'FlyAtlas:CG11023-RA',
+     'GenomeRNAi_gene:33155']
 
   
 You now know enough to be able to generate a line for a BED-format file (note
@@ -317,15 +370,34 @@ So you could write a BED file of all the genes like so::
         fout.write(i.to_bed())
     fout.close()
 
-This can be extremely useful for downstream processing by, for example,
-BEDtools.
+While convenient, this same functionality is possible with commandline tools operating on the original GFF file::
 
+    grep "	gene	" dm3.gff | awk '{print $1,$4,$5}' > genes.bed
+
+Where ``GFFutils`` is really useful though is in operating on the hierarchy of
+features implied by the format of GFF files (see next section).
+
+Other useful things in ``GFFFeature`` objects:
+
+Reconstruct the GFF line for this feature, and automatically add a newline::
+
+    feature.tostring()
+
+Get the transcription start site of the feature.  Note that all features have a
+``TSS`` property, not just genes.  It is simply the feature start position if it's on the "+" strand or the feature stop position if it's on the "-" strand::
+
+    feature.TSS
+
+Get the midpoint of the feature::
+
+    feature.midpoint
+
+See the `Examples`_ below for more info on this.
 
 Navigating the hierarchy of features
 ------------------------------------
-
 Here's how to find the transcripts belonging to a gene.  The
-``GFFFeature.children`` and ``GFFFeature.parents()`` methods need a
+``GFFFeature.children()`` and ``GFFFeature.parents()`` methods need a
 feature ID as an argument, which is stored in the :attr:`GFFFeature.id`
 attribute::
 
@@ -388,7 +460,6 @@ So, what were those genes that didn't have CDSs?  Check the first 25::
 
 A bunch of snoRNAs, tRNAs, etc.
 
-
 ``GFFFeatures`` have a ``GFFFeature.tostring()`` method which prints
 back the GFF file entry as a string (with the newline included).  This
 makes it very easy to write new GFF files containing a subset of the
@@ -411,9 +482,19 @@ In each case, assume the following setup::
     GFFutils.create_gffdb('dm3.gff','dm3.db')
     G = GFFutils.GFFDB('dm3.db')
 
+Inspecting the database
+-----------------------
+::
+  
+    print G.chromosomes()
+
+    print G.strands()
+
+    print list(G.features())
+
+
 Gene count
 ~~~~~~~~~~
-
 ::
 
     G.count_features_of_type('gene')
@@ -487,7 +568,7 @@ Histogram of exon lengths
 ::
 
    from matplotlib import pyplot as p
-   lengths = [i.stop-i.start for i in G.features_of_type('exon')]
+   lengths = [len(i) for i in G.features_of_type('exon')]
    p.hist(lengths,bins=50)
    p.show()
 
@@ -518,10 +599,161 @@ BED file of all exonic bases on chr2L
         fout.write(i.to_bed())
     fout.close()
 
+Closest features
+----------------
+
+Get the closest gene (ignoring the gene you supply) and how far away it is::
+
+    g = G.random_feature('gene')
+    distance, closest_id = G.closest_feature(g.chr, 
+                                             g.start,
+                                             featuretype='gene',
+                                             ignore=g.id)
+
+Get the closest upstream exon that belongs to a different gene from the one you
+supply::
+
+    g = G.random_feature('gene')
+    child_exons = G.children(g.id, level=2, featuretype='exon')
+    ignore = [exon.id for exon in child_exons]
+    distance, closest_exon = G.closest_feature(g.chr,
+                                               g.start,
+                                               featuretype='exon',
+                                               ignore=ignore,
+                                               strand=g.strand,
+                                               direction='upstream')
+
+Overlapping features
+--------------------
+
+Get the exons in the first MB of chr2L that are on the plus strand::
+
+    exons_of_interest = G.overlapping_features(chrom='chr2L',
+                                               start=1,
+                                               stop=1e6,
+                                               featuretype='exon',
+                                               strand='+',
+                                               completely_within=True)
+
+
+Merging features
+----------------
+This is useful if you want to get a "meta-exon" feature that is all exons
+together.  For example, say you have a gene with two isoforms, and you want to
+merge the exons together to get merged exons to indicate the presence of an
+exon in *any* isoform.  Graphically::
+
+                    
+    isoform 1: [[[[[[[[[-----[[[[[[[[------------[[[
+                 exon1         exon2             exon3
+    isoform 2:     [[[[[[------------------------[[[[[[
+                    exon4                         exon5
+
+    merge    : [[[[[[[[[[----[[[[[[[[------------[[[[[[
+                merged1         merged2           merged3
+
+Code::
+
+    g = G.random_feature('gene')
+    exons = G.children(g.id, level=2, featuretype='exon')
+    merged_exons = G.merge_features(exons)
+
+    # If you want to create a new GFF file...
+    fout = open('new.gff','w')
+    for merged_exon in merged_exons:
+        fout.write(merged_exon.tostring())
+    fout.close()
+
+
+Imputing introns
+----------------
+Sometimes a GFF file doesn't explicitly include introns as features.  You can
+construct them using the ``interfeatures()`` method.  This is a pretty
+barebones method, so you'll have to add your own IDs and featuretypes after you
+have the introns created.
+
+::
+
+    g = G.random_feature('gene')
+    exons = G.children(g.id, level=2, featuretype='exon')
+    introns = list(G.interfeatures(exons))
     
+    for i,intron in enumerate(introns):
+        intron.featuretype='intron'
+        intron.add_attribute('ID', '%s_intron:%s' % (g.id,i))
+
+
+Promoter regions
+----------------
+
+Promoter regions, 1kb upstream and downstream of a gene's TSS::
+
+    g = G.random_feature('gene')
+    promoter = G.promoter(g.id)
+    g.TSS - promoter.start
+    promoter.stop - g.TSS
+
+Promoter region defined as 2kb upstream::
+
+    g = G.random_feature('gene')
+    promoter = G.promoter(g.id, dist=2000, bidirectional=False)
+    g.TSS - promoter.start
+    promoter.stop - g.TSS
+
+Coding genes
+------------
+Useful for excluding tRNAs, rRNAs, etc . . . this returns a generator of all
+genes that have a CDS annotated as a child of level 2::
+
+    we_make_proteins = G.coding_genes()
+
+Isoform counts
+--------------
+Useful for getting constitutive exons (exons found in all isoforms of a gene)::
+
+    g = G.random_feature('gene')
+    n_gene_isos = G.n_gene_isoforms(g.id)
+    for exon in G.children(g.id,level=2,featuretype='exon'): 
+        if G.n_exon_isoforms(exon.id) == n_gene_isos:
+            print exon.id, 'is found in all isoforms of', g.id
+
+Arbitrary SQL commands
+----------------------
+Note that this places a lot of trust in the user to not mess up the database!
+
+Things at the beginning of chromosomes::
+
+    c = G.conn.cursor()
+    results = c.execute("""
+    SELECT id FROM features WHERE start BETWEEN 1 AND 100
+    """)
+    results = list(results)
+
+Manually creating relationships::
+
+    c.execute("""
+    INSERT INTO relations VALUES ('fake_parent', 'fake_child', 100)
+    """)
+
+Manually removing relationships::
+
+    c.execute("""
+    DELETE FROM relations WHERE parent='fake_parent'
+    """)
+
 
 Strategy
 --------
+The following is my reasoning for the design of this package.  I'd be
+interested to hear any thoughts on this or ways to improve it.
+
+.. note::
+
+   I tried a directed acyclic graph implementation, which would normally be
+   useful for a hierachical data structure, but making it persistent meant
+   unpickling it -- which took too long to start up and create.  Once it's
+   created, the database approach seems to be the fastest.
+
 A GFF database is built in several passes.  
 
 During the first pass, the lines from the GFF file are split up into fields and 
@@ -549,25 +781,28 @@ Note that we can't assign any second-order parents.  On this first pass, we can
 only add first-order parents because that's the only information that's
 available on a single line in the GFF file.
 
-At some point in the GFF file though, the parent transcript is found::
+At some point in the GFF file though, the parent transcript is found.  Here it is::
 
     chr2L FlyBase mRNA 7529 9484 . + . ID=mRNA_1;Parent=gene_1
 
-...and we import it into the ``features`` table::
+...and we import it into the ``features`` table, just as the exon feature was added::
 
     ID     chrom source  type start stop  value strand phase attributes
     ------ ----- ------- ---- ----- ----- ----- ------ ----- -----------------------
     exon_1 chr2L FlyBase CDS  8668  9276  .     +      0     ID=exon_1;mRNA_1
     mRNA_1 chr2L FlyBase mRNA 7529  9484  .     +      .     ID=mRNA_1;Parent=gene_1
 
-as well as the ``relations`` table::
+as well as the ``relations`` table, again just as the exon feature was added.
+Note however that the mRNA_1 is now in the child column.  This will become
+important later ::
 
     parent  child   level
     ------- ------- -----
     mRNA_1  exon_1  1
     gene_1  mRNA_1  1
 
-...and these tables continue to grow as the GFF file is parsed.  When this
+The ``features`` table and the ``relations`` table continue to grow as the GFF
+file is parsed.  Still, only first-order children/parents are added. When this
 first pass is done, indexes are created to speed up searching in the second
 pass.
 
@@ -575,11 +810,12 @@ The second pass looks at the ``relations`` table.  Note that **the current imple
 only goes 2 levels deep;** I still need to write a more general recursive form
 of this to support hierarchies of arbitrary depth.
 
-In the second pass, we go through each ID in the ``features`` column.  Then we
-find that ID in the ``child`` column of the ``relations`` table and get its corresponding
-parent.  In the example above, we find exon_1 in the ``child`` column.  Then we get its
-parent (mRNA_1).  Then we take that parent and get *it's* parent by looking for it in the ``child`` column 
-and then grabbing its parent (gene_1).
+In the second pass, we go through each ID in the ``features`` column, matching
+up IDs that are in the ``child`` column with the same ID in the ``parent``
+column.  In the example above, we find "exon_1" in the ``child`` column.  Then
+we get its parent ("mRNA_1").  Then we take that parent and get *it's* parent
+by looking for "mRNA_1" in the ``child`` column and then grabbing its parent
+("gene_1").
 
 Now we know that gene_1 is the "grandparent" of exon_1, and we can enter it
 into the ``relations`` table as a parent of level 2::
@@ -592,7 +828,7 @@ into the ``relations`` table as a parent of level 2::
 
 In practice, the results of the "parent search" are written to a temporary text
 file and then imported into the ``relations`` table as a batch in the end.
-This is to avoid recalculating the index each time a new row is added, somthing
+This is to avoid recalculating the index each time a new row is added, something
 that would be extraordinarily time consuming.
 
 Once the second pass is complete, indexes are built and the database is ready for use.
