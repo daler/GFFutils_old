@@ -2,8 +2,8 @@ GFFutils
 ========
 .. contents::
 
-Overview
---------
+Overview and motivation
+-----------------------
 This module is used for doing things with GFF files that are too
 complicated for a simple ``awk`` or ``grep`` command line call.
 
@@ -36,6 +36,16 @@ priveliges)::
 Now you're ready to create a GFF database and interact with it from a
 Python shell like IPython.
 
+New to Python?  Start here:
+
+http://wiki.python.org/moin/BeginnersGuide
+
+and here:
+
+http://showmedo.com/videotutorials/python
+
+
+
 Preparing to use GFFutils
 -------------------------
 For each GFF file you would like to use you need to create a GFF database.
@@ -47,27 +57,26 @@ step again.
 The database will take roughly twice as much hard drive space as the
 original text file.  This is the cost of interactivity and fast lookups.
 
-You will need a GFF file to import.  If you're using a FlyBase GFF file, you
-might want to take a look at the script ``GFF_cleaner.py`` in the scripts
-directory in order to filter out features that may not be of interest.
-Assuming you have a cleaned-up GFF file, here's how to create a GFF database
-from either a Python script or a Python shell::
+You will need a GFF file to work with. If you don't already have one, here's one
+you can use (*Drosophila melanogaster*; chromosome 2L only; 42 MB):
+
+ftp://ftp.flybase.net/genomes/Drosophila_melanogaster/dmel_r5.29_FB2010/gff/dmel-2L-r5.29.gff.gz
+
+If you're using a FlyBase GFF file, you might want to take a look at the script
+``GFF_cleaner.py`` in the scripts directory in order to filter out features
+that may not be of interest.  Assuming you have a cleaned-up GFF file, here's
+how to create a GFF database from either a Python script or a Python shell.  To
+do this you simply specify the path to the GFF file and the path to the new
+database you'd like to create::
 
     >>> import GFFutils
-    
-    # downloaded from, e.g., FlyBase
-    >>> gff_filename = '/data/annotations/dm3.gff'
-    
-    # the database that will be created
-    >>> db_filename = '/data/dm3.db'
-    
-    # do it! (this will take several minutes to run)
-    >>> GFFutils.create_gffdb(gfffn, db_filename)
+    >>> GFFutils.create_gffdb('/data/annotations/dm3.gff', '/data/dm3.db')
 
-Now ``dm3.db`` is the sqlite3 database that can be used in all sorts of
-weird and wonderful ways, outlined below.
+This may take some time to run, but you only have to do this step once for
+every GFF file you use.  Now ``dm3.db`` is the sqlite3 database that can be
+used in all sorts of weird and wonderful ways, outlined below.
 
-You can find more information on exactly what's going on in the "Strategy"
+You can find more information on exactly what's going on in the `Strategy`_
 section below.
 
 For power users, you can of course work on the sqlite3 database directly.
@@ -97,10 +106,8 @@ Here's the schema::
     CREATE INDEX stops on features(stop);
     CREATE INDEX stopstrand on features(stop,strand);
 
-
-Using the database interactively
---------------------------------
-First, wrap your new database in a ``GFFDB`` object::
+Here's how to to connect to the new database from Python.  First, wrap your new
+database in a ``GFFDB`` object::
 
     >>> G = GFFutils.GFFDB('dm3.db')
 
@@ -115,10 +122,19 @@ below, too.
 
 Identifying what's in the database
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-What sorts of features are in the db?  The ``GFFDB.features`` method
-returns an iterator of the featuretypes that were in the GFF file (and
-which are now in the ``featuretype`` field of the sqlite3 database, which
-this method accesses).
+For this section, I'm assuming that you've created a GFF database and have
+connected to it as described above.  I'm also assuming you named the ``GFFDB``
+object ``G``.
+
+I'm also not assuming much Python knowledge.  If this sounds overly pedantic to
+you, feel free to jump right to the `Examples`_!
+
+As an introduction to using the database, let's start with answering a simple
+question: "What sorts of features are in the GFF file?"  To do this, we'll use
+the ``features()`` method of the ``GFFDB`` object.  The ``GFFDB.features()``
+method returns a generator of the featuretypes that were in the GFF file (and
+which are now in the ``featuretype`` field of the sqlite3 database, which this
+method accesses).
 
 Most methods in a ``GFFDB`` object return generators for performance.
 
@@ -130,10 +146,9 @@ Most methods in a ``GFFDB`` object return generators for performance.
     item in an iterator with its ``.next()`` method.  All four ways of getting
     info from a generator object are shown below in the examples.
 
-Since this is the first example of using the iterators returned by a ``GFFDB``
-object, here are a few different ways to get the results from the iterator it
-returns.
-   
+Since this is the first example of using the generators returned by a ``GFFDB``
+object, here are a few different ways to get the results from the generator.
+
 Method 0: Convert iterator to a list.  This is the most memory-intensive::
 
     >>> featuretype_iterator = G.features()
@@ -193,11 +208,12 @@ depends entirely on the GFF file that you created your database from::
      'uncharacterized_change_in_nucleotide_sequence']
 
 
+
 Retrieving specific feature types
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 To retrieve just genes, just exons, or any other feature type that was in
 the GFF file, use the ``GFFDB.features_of_type()`` method.  This will return
-an iterator of ``GFFFeature`` objects.  These objects are described in
+an iterator of ``GFFFeature`` objects.  ``GFFFeature`` objects are described in
 more detail in another section below.
 
 ``'gene'`` was in the list of ``featuretypes`` above.  Let's find out how many
@@ -229,8 +245,9 @@ for that gene directly like this::
 The ID of a feature can be hard to remember.  The name of a gene is often much
 easier to search by.  However, GFF files are not consistent in how they store
 the name of a gene (for example, FlyBase GFF files have one name stored in the
-Name attribute, while others may be stored in the Alias attribute).  Nevertheless, 
-there's a way to get named genes if the name is somewhere in the attributes field::
+Name attribute, while other names may be stored in the Alias attribute).
+Nevertheless, there's a way to get named genes if the name is somewhere in the
+attributes field::
 
     >>> candidates = G.attribute_search('Rm62')
     >>> assert len(candidates) == 1
@@ -258,7 +275,7 @@ This section discusses ``GFFFeatures`` which are the things you get back when
 you query the database for a feature.
 
 Just to make sure we're on the same page, here's the setup for this
-section::
+section, assuming you've created a GFF database called ``dm3.db``::
 
     >>> import GFFutils
     >>> G = GFFutils.GFFDB('dm3.db')
@@ -280,7 +297,10 @@ accession in the attributes field of the original GFF file::
     >>> print gene.id
     'FBgn0031208'
 
-They also have many other properties::
+If there was no unique ID in the original GFF file, then the ID will be the
+feature type plus an integer (for example, "gene119").  
+
+``GFFFeature`` objects have many other properties::
 
     >>> gene.start
     7529
@@ -298,7 +318,7 @@ They also have many other properties::
     '+'
 
 
-You can get the length of a gene with::
+You can get the length of a feature with::
 
     >>> gene_len = gene.stop - gene.start
 
@@ -309,7 +329,7 @@ or you can use the perhaps-more-convenient::
 In a ``GFFFeature`` object, the ``GFFFeature.attributes`` 
 attribute holds all the info that was in the attributes column of your GFF
 file.  This will vary based on what was in your original GFF file.  You can
-get a list of this with::
+get a list of attribute names for a feature with::
     
     >>> print gene.attributes._attrs
 
@@ -359,19 +379,13 @@ But ``GFFFeature`` objects have a convenience function,
 ``to_bed()``, which also accepts a number from 3 to 6 so you can tell it
 how many BED fields you want returned (3 fields is the default).
 
-So you could write a BED file of all the genes like so::
+So you could write a BED file of all the genes longer than 5 kb like so::
 
     >>> fout = open('genes.bed','w')  # open a file for writing
-    >>> for i in G.features_of_type('gene'):
-    ...     fout.write(i.to_bed())
+    >>> for gene in G.features_of_type('gene'):
+    ...     if len(gene) > 5000:
+    ...         fout.write(gene.to_bed())
     >>> fout.close()
-
-While convenient, this same functionality is possible with commandline tools operating on the original GFF file::
-
-    grep "	gene	" dm3.gff | awk '{print $1,$4,$5}' > genes.bed
-
-Where ``GFFutils`` is really useful though is in operating on the hierarchy of
-features implied by the format of GFF files (see next section).
 
 Other useful things in ``GFFFeature`` objects:
 
@@ -380,7 +394,9 @@ Reconstruct the GFF line for this feature, and automatically add a newline::
     >>> feature.tostring()
 
 Get the transcription start site of the feature.  Note that all features have a
-``TSS`` property, not just genes.  It is simply the feature start position if it's on the "+" strand or the feature stop position if it's on the "-" strand::
+``TSS`` property, not just genes.  It is simply the feature's start position if
+it's on the "+" strand or the feature's stop position if it's on the "-"
+strand::
 
     >>> feature.TSS
 
@@ -393,29 +409,36 @@ See the `Examples`_ below for more info on this.
 Navigating the hierarchy of features
 ------------------------------------
 Here's how to find the transcripts belonging to a gene.  The
-``GFFFeature.children()`` and ``GFFFeature.parents()`` methods need a
-feature ID as an argument, which is stored in the ``GFFFeature.id``
-attribute::
+``GFFDB.children()`` and ``GFFDB.parents()`` methods take either a feature ID
+as an argument or a ``GFFFeature`` object.  The return value is a generator of
+features that are children of the feature::
 
     >>> for i in G.children(gene.id):
     ...     print i
 
-Here's how to find the exons belonging to a gene.  By default, level=1,
-which means a 'hierarchy distance' of 1 (direct parent/children).  level=2
-is analagous to grandparent/grandchild, which is used for the relationship
-between genes/exons.  level=3 not currently implemented (not clear where it
-would be used)::
+Here's how to find the exons belonging to a gene.  By default, level=1, which
+means a 'hierarchy distance' of 1 (direct parent/children, for example genes
+and transcripts).  level=2 is analagous to grandparent/grandchild, which is
+used for the relationship between genes/exons.  level=3 is not currently
+implemented::
 
     >>> for i in G.children(gene_name, level=2):
     ...     print i
 
 Note that, depending on your GFF file, you may have more than just exons as
 the children of genes (e.g., 3' UTRs, introns, 5' UTRs).  If you just want
-the exons, then you can filter by feature type::
+the exons, then you can filter by feature type by specifying the
+``featuretype`` keyword argument to ``children()``::
 
-    >>> for i in G.children(gene.id, level=2):
-    ...     if i.featuretype == 'exon':
-    ...         print i
+    >>> for exon in G.children(gene.id, level=2, featuretype='exon'):
+    ...     print exon
+
+Similarly, you can get the parents with ``GFFDB.parents()``.  Here's how to get
+what gene an exon belongs to::
+
+    >>> exon = G.random_feature('exon')
+    >>> for grandparent_gene in G.parents(exon, level=2, featuretype='gene'):
+    ...     print grandparent_gene
 
 File format conversions
 -----------------------
@@ -565,12 +588,15 @@ Histogram of exon lengths
    from matplotlib import pyplot as p
    lengths = [len(i) for i in G.features_of_type('exon')]
    p.hist(lengths,bins=50)
+   p.xlabel('Length of exon')
+   p.ylabel('Frequency')
    p.show()
 
 
 Average number of isoforms for genes on plus strand
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-::
+This assumes that transcripts are labeled as "mRNA" instead of "transcript" or
+something::
 
     isoform_count = 0
     gene_count = 0
@@ -704,7 +730,8 @@ genes that have a CDS annotated as a child of level 2::
 
 Isoform counts
 ~~~~~~~~~~~~~~
-Useful for getting constitutive exons (exons found in all isoforms of a gene)::
+Useful for getting constitutive exons (i.e. exons found in all isoforms of a
+gene)::
 
     g = G.random_feature('gene')
     n_gene_isos = G.n_gene_isoforms(g.id)
