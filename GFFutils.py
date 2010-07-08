@@ -1080,7 +1080,7 @@ class GFFDB:
         self.conn.text_factory = str
 
     def __getitem__(self,id):
-        if type(id) is not str:
+        if isinstance(id, self.__class__.featureclass):
             id = id.id
         c = self.conn.cursor()
         c.execute('''
@@ -1548,7 +1548,7 @@ class GFFDB:
         gene are at level=2.  Returns an error if there are not enough levels
         of children for the level specified.'''
 
-        if type(id) is not str:
+        if isinstance(id, self.__class__.featureclass):
             id = id.id
 
         cursor = self.conn.cursor()
@@ -1576,7 +1576,7 @@ class GFFDB:
         gene are at level=2.  Returns an error if there are not enough levels
         of children for the level specified.'''
 
-        if type(id) is not str:
+        if isinstance(id, self.__class__.featureclass):
             id = id.id
 
         cursor = self.conn.cursor()
@@ -1707,7 +1707,7 @@ class GFFDB:
         checking the upper boundary is the responsibility of the calling
         function.
         """
-        if type(id) is not str:
+        if isinstance(id, self.__class__.featureclass):
             feature = self[id]
         else:
             feature = id
