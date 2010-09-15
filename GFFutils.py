@@ -1184,6 +1184,20 @@ class GFFDB:
         for i in c:
             yield self.__class__.featureclass(*i)
 
+    def exonic_bp(self,id,ignore_strand=False):
+        if isinstance(id, self.__class__.featureclass):
+            id = id.id
+        exons = self.children(id, featuretype='exon', level=2)
+        exons = list(exons)
+        if len(exons) == 0:
+            return 0
+        merged_exons = self.merge_features(exons,ignore_strand)
+        total_exon_bp = 0
+        for exon in merged_exons:
+            total_exon_bp += len(exon)
+        return total_exon_bp
+
+    
     def closest_feature(self, chrom, pos, featuretype='gene', strand=None, ignore=None, direction=None):
         """
         Returns the distance and ID of the closest TSS to the coordinate. Strand optional.
