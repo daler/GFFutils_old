@@ -26,10 +26,10 @@ class GFFFeature(object):
         def __init__(self):
             self._attrs = []  # will hold a list of attributes added to the object.
 
-    def __init__(self, chr, source, featuretype, start, stop,
+    def __init__(self, chrom, source, featuretype, start, stop,
                  value,strand,phase,attributes,strvals=False):
         """
-        *chr*
+        *chrom*
         
             Chromosome
         
@@ -79,7 +79,7 @@ class GFFFeature(object):
         """
 
         if not strvals: # do typecasting
-            self.chr=chr
+            self.chrom=chrom
             self.source=source
             self.featuretype=featuretype
             try:
@@ -107,7 +107,7 @@ class GFFFeature(object):
                 self.phase = None
           
         if strvals: # no typecasting, save everything as a string.
-            self.chr=chr
+            self.chrom=chrom
             self.source=source
             self.featuretype=featuretype
             self.start=start
@@ -145,6 +145,11 @@ class GFFFeature(object):
             return self.attributes.ID[0]
         except AttributeError:
             return None
+    
+    @property
+    def chr(self):
+        """Attribute *chr* now deprecated -- please use *chrom* instead"""
+        return self.chrom
 
     def add_attribute(self,attribute,value):
         """
@@ -183,14 +188,17 @@ class GFFFeature(object):
         *fieldcount*.  Default is 3, which is chrom, start, stop.  Up to BED-6
         is supported.
         """
-        attrs = ['chr','start','stop','id','value','strand']
+        attrs = ['chrom','start','stop','id','value','strand']
         fields = []
         for i in range(fieldcount):
-            fields.append(str(getattr(self,attrs[i])))
+            if attrs[i] == 'start':
+                fields.append(str(getattr(self,'start')-1))
+            else:
+                fields.append(str(getattr(self,attrs[i])))
         return '\t'.join(fields)+'\n'
 
     def __repr__(self):
-        return "%s %s '%s': %s:%s-%s (%s)" % (self.__class__.__name__,self.featuretype,self.id,self.chr,self.start,self.stop, self.strand)
+        return "%s %s '%s': %s:%s-%s (%s)" % (self.__class__.__name__,self.featuretype,self.id,self.chrom,self.start,self.stop, self.strand)
 
     def __len__(self):
         return self.stop-self.start
@@ -242,7 +250,7 @@ class GFFFeature(object):
             attributes.append(attr+'='+values)
         attributes = ';'.join(attributes)
 
-        items = [self.chr, 
+        items = [self.chrom, 
                  self.source,
                  self.featuretype,
                  self.start, 
@@ -267,7 +275,7 @@ class GFFFile(object):
     Usage::
 
         for feature in gfffile('a.bed'):
-            print feature.chr
+            print feature.chrom
             print feature.start
             print feature.stop
             print feature.featuretype
@@ -334,7 +342,7 @@ class GFFFile(object):
     def __eq__(self,other):
         if self._strattributes != other._strattributes:
             return False
-        for attr in ['id','featuretype','start','stop','chr']:
+        for attr in ['id','featuretype','start','stop','chrom']:
             if getattr(self,attr) != getattr(other,attr):
                 return False
         return True
@@ -349,10 +357,10 @@ class GTFFeature(GFFFeature):
     """
     Class to represent a GTF feature and its annotations. Subclassed from GFFFeature.
     """
-    def __init__(self, id, chr, source, featuretype, start, stop,
+    def __init__(self, id, chrom, source, featuretype, start, stop,
                  value,strand,phase,attributes,strvals=False):
-        #print id,chr,source,featuretype,start,stop,value,strand,phase,attributes
-        GFFFeature.__init__(self,chr,source,featuretype,start,stop,value,strand,phase,attributes,strvals)
+        #print id,chrom,source,featuretype,start,stop,value,strand,phase,attributes
+        GFFFeature.__init__(self,chrom,source,featuretype,start,stop,value,strand,phase,attributes,strvals)
         self._strattributes = ''
         self.add_attribute('ID',id)
     
@@ -379,7 +387,7 @@ class GTFFeature(GFFFeature):
                 values = ','.join(map(str,values))
             attributes += attr+' '+'"'+str(values)+'"; '
 
-        items = [self.chr, 
+        items = [self.chrom, 
                  self.source,
                  self.featuretype,
                  self.start, 
@@ -462,7 +470,7 @@ class GTFFile(GFFFile):
     Usage::
 
         for feature in GTFFile('a.bed'):
-            print feature.chr
+            print feature.chrom
             print feature.start
             print feature.stop
             print feature.featuretype
@@ -571,14 +579,14 @@ def intersect(features1, features2,ignore_strand=False):
 
     for feature1 in features1:
         for feature2 in features2:
-            if feature1.chr != feature2.chr:
+            if feature1.chrom != feature2.chrom:
                 continue
             if not ((feature1.stop > feature2.start) and (feature1.start < feature2.stop)):
                 continue
 
             maxstart = max( [feature1.start, feature2.start] )
             minstop = min( [feature1.stop, feature2.stop] )
-            newfeature = GFFFeature(chr=feature1.chr,
+            newfeature = GFFFeature(chrom=feature1.chrom,
                                      source=None,
                                      featuretype='intersection',
                                      start=maxstart,
@@ -677,9 +685,9 @@ def create_gffdb(gfffn, dbfn):
 
         # actual insertion here
         c.execute('''
-                  INSERT INTO features VALUES (?,?,?,?,?,?,?,?,?,?)
+                  INSERT OR IGNORE INTO features VALUES (?,?,?,?,?,?,?,?,?,?)
                   ''',(feature.id, 
-                   feature.chr,
+                   feature.chrom,
                    feature.start, 
                    feature.stop,
                    feature.strand,
@@ -906,7 +914,7 @@ def create_gtfdb(gtffn, dbfn):
         c.execute('''
                   INSERT OR IGNORE INTO features VALUES (?,?,?,?,?,?,?,?,?,?)
                   ''',(ID, 
-                   feature.chr,
+                   feature.chrom,
                    feature.start, 
                    feature.stop,
                    feature.strand,
@@ -1185,6 +1193,10 @@ class GFFDB:
             yield self.__class__.featureclass(*i)
 
     def exonic_bp(self,id,ignore_strand=False):
+        """
+        Merges all exons of the gene *id* and sums the total bp.
+        *ignore_strand* is passed to merge_features().
+        """
         if isinstance(id, self.__class__.featureclass):
             id = id.id
         exons = self.children(id, featuretype='exon', level=2)
@@ -1196,13 +1208,27 @@ class GFFDB:
         for exon in merged_exons:
             total_exon_bp += len(exon)
         return total_exon_bp
-
     
-    def closest_feature(self, chrom, pos, featuretype='gene', strand=None, ignore=None, direction=None):
+
+    def closest_feature(self,chrom,pos,strand=None,featuretype=None, ignore=None):
         """
-        Returns the distance and ID of the closest TSS to the coordinate. Strand optional.
-        """
+        Finds the closest feature.  It's up the caller to determine things like
+        upstream/downstream, TSS, TTS, midpoints, etc.
+
+        *ignore* is either None (default) or a list of IDs that you would like
+        to ignore.
         
+        If you are providing the *chrom*, *pos* of a gene's TSS, then you will
+        have to add that gene's ID to the *ignore* list so you don't get that
+        same gene returned as the closest (which it is).  
+
+        The *ignore* list also makes it possible to get the next-closest
+        feature to a coord by first getting the closest, then adding that ID to
+        the *ignore* list and calling this method again.
+
+        Note that providing a *featuretype* and *strand* will speed things up
+        considerably.
+        """
         # e.g., AND id != FBgn0001 AND id != FBgn0002
         ignore_clause = ''
         if ignore is not None:
@@ -1210,142 +1236,48 @@ class GFFDB:
                 ignore = [ignore]
             for i in ignore:
                 ignore_clause += ' AND id != "%s" ' % i
-        if (strand is None) and (direction is not None):
-            raise ValueError, 'Strand must be specified if direction is specified'
-
-        # Mini-examples above each query show the position as an "x" and
-        # promoters to indicate genes on (+) or (-) strands
-
-        #  ---->                ----->
-        #  |               X    |
-        #  ^ finds this one
-        if strand == '+' and direction == 'upstream':
-            c = self.conn.cursor()
-            c.execute('''
-            SELECT %s-start as AAA,id FROM features 
-            WHERE featuretype = ?
-            AND chrom = ?
-            AND strand = "+"
-            AND start < ?
-            %s
-            ORDER BY AAA LIMIT 1
-            ''' % (pos, ignore_clause), (featuretype,chrom,pos))
-            closest = c.fetchone()
-            return closest
         
-        #  ---->                 ----->
-        #  |       X             |
-        #                        ^ finds this one
-        if strand == '+' and direction == 'downstream':
-            c = self.conn.cursor()
-            c.execute('''
-            SELECT start-%s as AAA,id FROM features 
-            WHERE featuretype = ?
-            AND chrom = ?
-            AND strand = "+"
-            AND start > ?
-            %s
-            ORDER BY AAA LIMIT 1
-            ''' % (pos, ignore_clause), (featuretype,chrom,pos))
-            closest = c.fetchone()
-            return closest
+        strand_clause = ''
+        if strand is not None:
+            strand_clause = ' AND strand=%s ' % strand
+        
+        featuretype_clause = ''
+        if featuretype is not None:
+            featuretype_clause = ' AND featuretype="%s" ' % featuretype
+        
+        c = self.conn.cursor()
+        
+        c.execute('''
+        SELECT abs(%(pos)s-start) as AAA,id FROM features 
+        WHERE
+        chrom = ?
+        %(ignore_clause)s
+        %(strand_clause)s
+        %(featuretype_clause)s
+        ORDER BY AAA LIMIT 1
+        ''' % locals(),(chrom,))
+        closest_start = c.fetchone()
+        
+        c.execute('''
+        SELECT abs(%(pos)s-stop) as AAA,id FROM features 
+        WHERE
+        chrom = ?
+        %(ignore_clause)s
+        %(strand_clause)s
+        %(featuretype_clause)s
+        ORDER BY AAA LIMIT 1
+        ''' % locals(),(chrom,))
+        closest_stop = c.fetchone()
 
-        #  <----                   <----
-        #      |    X                  |
-        #                              ^ finds this one
-        if strand == '-' and direction == 'upstream':
-            c = self.conn.cursor()
-            c.execute('''
-            SELECT stop-%s as AAA,id FROM features 
-            WHERE featuretype = ?
-            AND chrom = ?
-            AND strand = "-"
-            AND stop > ?
-            %s
-            ORDER BY AAA LIMIT 1
-            ''' % (pos, ignore_clause), (featuretype,chrom,pos))
-            closest = c.fetchone()
-            return closest
+        candidates = [closest_start,closest_stop]
+        candidates.sort(key=lambda x: x[0])
+        
+        dist,feature_id = candidates[0]
+        
+        return dist, self[feature_id]
 
-        #  <----               <----
-        #      |           X       |
-        #      ^ finds this one
-        if strand == '-' and direction == 'downstream':
-            c = self.conn.cursor()
-            c.execute('''
-            SELECT %s-stop as AAA,id FROM features 
-            WHERE featuretype = ?
-            AND chrom = ?
-            AND strand = "-"
-            AND stop < ?
-            %s
-            ORDER BY AAA LIMIT 1
-            ''' % (pos, ignore_clause), (featuretype,chrom,pos))
-            closest = c.fetchone()
-            return closest
-
-        if direction is None:
-            #  ---->     <--         ---->
-            #  |           |   X     |
-            #                        ^ finds this one
-            if strand == '+':
-                c = self.conn.cursor()
-                c.execute('''
-                SELECT abs(start-%s) as AAA,id FROM features 
-                WHERE featuretype = ?
-                AND chrom = ?
-                AND strand = "+"
-                %s
-                ORDER BY AAA LIMIT 1
-                ''' % (pos, ignore_clause), (featuretype,chrom))
-                closest = c.fetchone()
-                return closest
-
-            #  <----     --->  <----
-            #      |     |   X     |
-            #                      ^ finds this one
-            if strand == '-':
-                c = self.conn.cursor()
-                c.execute('''
-                SELECT abs(stop-%s) as AAA,id FROM features
-                WHERE featuretype = ?
-                AND chrom = ?
-                AND strand = "-"
-                %s
-                ORDER BY AAA LIMIT 1
-                ''' % (pos, ignore_clause), (featuretype,chrom))
-                closest = c.fetchone() 
-                return closest
-
-
-            # If strand not specified, then find the closest one on either strand
-            #  <----             -->      <----
-            #      |         X   |            |
-            #                    ^ finds this one
-            if strand is None:
-                c = self.conn.cursor()
-                c.execute('''
-                SELECT abs(start-%s) as AAA,id FROM features 
-                WHERE featuretype = ?
-                AND chrom = ?
-                AND strand = "+"
-                %s
-                ORDER BY AAA LIMIT 1
-                ''' % (pos, ignore_clause), (featuretype,chrom))
-                closest_plus = c.fetchone()
-
-                c.execute('''
-                SELECT abs(stop-%s) as AAA,id FROM features
-                WHERE featuretype = ?
-                AND chrom = ?
-                AND strand = "-"
-                %s
-                ORDER BY AAA LIMIT 1
-                ''' % (pos, ignore_clause), (featuretype,chrom))
-                closest_minus = c.fetchone() 
-                both = [closest_minus,closest_plus]
-                both.sort()
-                return both[0]
+    def closest_TSS(self, chrom, pos, featuretype='gene', strand=None, ignore=None, direction=None):
+        raise DeprecationWarning, "closest_TSS() is now deprecated -- please use closest_feature() instead, which relies on the caller for more complex manipulation"
 
     def overlapping_features(self,chrom,start,stop,featuretype=None,strand=None, completely_within=False):
         """
@@ -1405,6 +1337,7 @@ class GFFDB:
         if hasattr(features,'next'):
             features = list(features)
         
+
         # Quick function to sort by start position
         def start_pos(x):
             return x.start
@@ -1415,15 +1348,15 @@ class GFFDB:
         # Not sure how to deal with multiple strands...
         if not ignore_strand:
             strands = [i.strand for i in features]
-            if len(set(strands))!= 1:
+            if len(set(strands))> 1:
                 raise ValueError, 'Specify ignore_strand=True to force merging of multiple strands'
             strand = strands[0]
         else:
             strand = '+'
         
         # ...or multiple chromosomes
-        chroms = [i.chr for i in features]
-        if len(set(chroms)) != 1:
+        chroms = [i.chrom for i in features]
+        if len(set(chroms)) > 1:
             raise NotImplementedError, 'Merging multiple chromosomes not implemented yet'
         chrom = chroms[0]
 
@@ -1453,10 +1386,10 @@ class GFFDB:
                     # within the previous feature.  Nothing more to do.
                     continue
             else:
-                # The start position is within the merged feature, so we're done with 
+                # The start position is outside the merged feature, so we're done with 
                 # the current merged feature.  Prepare for output...
                 Feature = feature.__class__
-                merged_feature = Feature(chr=feature.chr,
+                merged_feature = Feature(chrom=feature.chrom,
                                          source=None,
                                          featuretype=featuretype,
                                          start=current_merged_start,
@@ -1473,7 +1406,7 @@ class GFFDB:
 
         # need to yield the last one.
         Feature = feature.__class__
-        merged_feature = Feature(chr=feature.chr,
+        merged_feature = Feature(chrom=feature.chrom,
                                  source=None,
                                  featuretype=featuretype,
                                  start=current_merged_start,
@@ -1516,15 +1449,15 @@ class GFFDB:
             interfeature_stop = feature.start
             featuretype = 'inter_%s_%s' % (last_feature.featuretype, feature.featuretype)
             assert last_feature.strand == feature.strand
-            assert last_feature.chr == feature.chr
+            assert last_feature.chrom == feature.chrom
             strand = last_feature.strand
-            chr = last_feature.chr
+            chrom = last_feature.chrom
 
             # Shrink
             interfeature_start += 1
             interfeature_stop -= 1
 
-            yield self.featureclass(chr=chr,
+            yield self.featureclass(chrom=chrom,
                                     source=None,
                                     featuretype=featuretype,
                                     start=interfeature_start,
@@ -1665,7 +1598,7 @@ class GFFDB:
 
         line = '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' % (gene.attributes.Name[0], 
                                                                  gene.id,
-                                                                 gene.chr, 
+                                                                 gene.chrom, 
                                                                  gene.strand, 
                                                                  gene.start, 
                                                                  gene.stop,
@@ -1742,7 +1675,7 @@ class GFFDB:
                 AND id != ?
                 AND stop < ?
                 ''' % (feature.start),(truncate_at_next_feature, 
-                                       feature.chr, 
+                                       feature.chrom, 
                                        feature.id, 
                                        feature.start))
                 closest_feature_dist = c.fetchone()[0]
@@ -1760,7 +1693,7 @@ class GFFDB:
                 AND id != ?
                 AND start > ?
                 ''' % (feature.stop),(truncate_at_next_feature, 
-                                      feature.chr, 
+                                      feature.chrom, 
                                       feature.id, 
                                       feature.stop))
                 closest_feature_dist = c.fetchone()[0]
@@ -1801,7 +1734,7 @@ class GFFDB:
         # Create a new GFFFeature object (or GTFFeature) to return
         if self.__class__.featureclass == GTFFeature:
             promoter = self.__class__.featureclass(id='promoter:'+id,
-                                          chr=feature.chr,
+                                          chrom=feature.chrom,
                                           source='imputed',
                                           featuretype='promoter',
                                           start=start,
@@ -1812,7 +1745,7 @@ class GFFDB:
                                           attributes=None)
      
         else:
-            promoter = self.__class__.featureclass(chr=feature.chr,
+            promoter = self.__class__.featureclass(chrom=feature.chrom,
                                               source='imputed',
                                               featuretype='promoter',
                                               start=start,
@@ -1980,5 +1913,3 @@ class GTFDB(GFFDB):
         for i in UTRs:
             yield i
 
-if __name__ == "__main__":
-    G = GTFDB('/home/ryan/data/solexa/meta-solexa/dm3-chr.GTF.db')
