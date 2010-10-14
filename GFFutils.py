@@ -537,23 +537,29 @@ class Genome:
             self.namestarts[chrom] = ind1
             m.seek(ind2)
 
-        # count the newlines in each chrom; assume that line lengths are equal
-        startinds = sorted(self.startinds.items(),key=lambda x: x[1])
-        self.newlines = {}
-        self.chromlens = {}
-        for i in range(len(startinds)):
-            chrom,startind = startinds[i]
-            try:
-                nextchrom,nextstart = startinds[i+1]
-                nextnamestart = self.namestarts[nextchrom]
-                chromlen = nextnamestart-startind
-            except IndexError:
-                nextnamestart = -1
-                chromlen = m.size()-startind 
-            m.seek(startind)
-            entire_chrom = m.read(nextnamestart-startind)
-            self.newlines[chrom] = entire_chrom.count('\n')
-            self.chromlens[chrom] = chromlen
+        ### TODO: the code below is a sketch of what to do about multimapping
+        #   multiline FASTAs...but not working at the moment.
+        
+        if 0: 
+            # count the newlines in each chrom; assume that line lengths are equal
+            startinds = sorted(self.startinds.items(),key=lambda x: x[1])
+            self.newlines = {}
+            self.chromlens = {}
+            for i in range(len(startinds)):
+                chrom,startind = startinds[i]
+                try:
+                    nextchrom,nextstart = startinds[i+1]
+                    nextnamestart = self.namestarts[nextchrom]
+                    chromlen = nextnamestart-startind
+                except IndexError:
+                    nextnamestart = -1
+                    chromlen = m.size()-startind 
+                m.seek(startind)
+                entire_chrom = m.read(nextnamestart-startind)
+                self.newlines[chrom] = entire_chrom.count('\n')
+                self.chromlens[chrom] = chromlen
+
+        m.seek(0)
         self.mmap = m
 
     def sequence(self,chrom,start,stop,strand=None):
