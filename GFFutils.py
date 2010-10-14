@@ -13,6 +13,7 @@ import mmap
 import string
 import copy
 import gzip
+import string
 
 class GFFFeature(object):
     """
@@ -350,9 +351,6 @@ class GFFFile(object):
     def __repr__(self):
         return 'gfffile object (file=%s)' % (self.file)
 
-
-exon_numbers = {}
-
 class GTFFeature(GFFFeature):
     """
     Class to represent a GTF feature and its annotations. Subclassed from GFFFeature.
@@ -486,134 +484,267 @@ class Genome:
     """
     Wrapper class for quickly getting a sequence within a chromosome. Inspired by ERANGE.
 
-    Creates a memory-map of the fasta file.  It indexes where the newlines are
+    This class creates a memory-map of the fasta file.  It indexes where the newlines are
     in the file and records how many bits it is into the file.  Access is then
     pretty quick, since we can seek to that bit in the file rather quickly.
     
+    For now, FASTA files must have their sequence all on one line. Use the
+    fasta_seqs_to_oneline() function to make a file like this.
+
+
+
     Example usage::
 
         >>> g = Genome('dm3.fa')
         >>> nucleotides = g.sequence('chr2L',12000,13000)
-    
-    This implementation does NOT depend on BioPython, but converting to a
-    BioPython Seq object is pretty easy:
-
-        >>> from Bio.Seq import Seq
-        >>> seq = Seq(nucleotides)
-        >>> revcomp = seq.reverse_complement()
-        >>> protein = seq.translate()
-
     """
-    def __init__(self,fn):
+    def __init__(self,fn,debug=False):
         """
-        *fn*
-
-            fasta file with sequences each on a single line.
+        *fn* is a FASTA-format file.
         """
-        # Assume file has a single newline, and it's what separates the
-        # description from the sequence.  
-        #
-        # e.g., 
-        #
-        # >chr2L
-        # AAAGATCTGACTGACCGCGCGGGATATCGCGCATGCTAC...
-        # > chr2R
-        # ACGATCGCGCGCAATAATTTATATGCGACTAGCTGTAGC...
-
         # Keep track of the starting position of each chromosome in self.startinds
         self.startinds = {}
         self.chromfiles = {}
+        self.namestarts = {}
         f = open(fn)
         m = mmap.mmap(f.fileno(),0,access=mmap.ACCESS_READ)
         ind1 = 0
         m.seek(0)
         while True:
+            # Find the next occurrence of the fasta header delimiter.
             ind1 = m.find('>')
+
+            # find() returns -1 if nothing found.
             if ind1 == -1:
                 break
+
+            # scoot up to the ">", and find the position of the newline at the end.
             m.seek(ind1)
             ind2 = m.find('\n')
-            print ind1
-            print ind2
+            
+            # The name of the chrom is from just after the ">" to just before
+            # the newline (recall Python's half-open intervals, hence ind2
+            # instead of ind2-1)
             chrom = m[ind1+1:ind2]
-            m.seek(ind2+1)
-            print chrom
+            
+            if debug:
+                print chrom, ind1, ind2
+            
+            # The sequence of this chromosome starts at ind2+1.
             self.startinds[chrom] = ind2+1
+
+            # keep track of where the name starts
+            self.namestarts[chrom] = ind1
+            m.seek(ind2)
+
+        # count the newlines in each chrom; assume that line lengths are equal
+        startinds = sorted(self.startinds.items(),key=lambda x: x[1])
+        self.newlines = {}
+        self.chromlens = {}
+        for i in range(len(startinds)):
+            chrom,startind = startinds[i]
+            try:
+                nextchrom,nextstart = startinds[i+1]
+                nextnamestart = self.namestarts[nextchrom]
+                chromlen = nextnamestart-startind
+            except IndexError:
+                nextnamestart = -1
+                chromlen = m.size()-startind 
+            m.seek(startind)
+            entire_chrom = m.read(nextnamestart-startind)
+            self.newlines[chrom] = entire_chrom.count('\n')
+            self.chromlens[chrom] = chromlen
         self.mmap = m
 
-    def sequence(self,chrom,start,stop):
+    def sequence(self,chrom,start,stop,strand=None):
         """
-        Returns the sequence for the position requested.
+        Returns the sequence for the position (*chrom*, *start*, *stop*)
+        requested.
+
+        If *strand* is '-', the reverse complement is returned.
         """
+        
+        # the chromosome start position
         i = self.startinds[chrom]
-        start = i + start
-        length = i + stop - start
+        
+        # count the number of newlines between the chromosome start and the
+        # position you want to get to.
+        self.mmap.seek(0)
+
+        start = i + start - 1
         self.mmap.seek(start)
+
+        length = i + stop - start
         seq = self.mmap.read(length)
 
-        # Since we're reading right from the file, seq may have newlines in it.
-        # So count the number of newlines, get another, longer sequence (longer
-        # by the number of newlines) and return the new longer sequence with
-        # the newlines stripped.
-        newlines = seq.count('\n')
-        if newlines == 0:
+        if strand == '-':
+            return seq.translate(string.maketrans("ATCG", "TAGC"))[::-1]
+        else:
             return seq
+    
+    def sequence_from_feature(self,feature):
+        """
+        Similar to self.sequence(), but accepts a GFFFeature or GTFFeature
+        object for convenience.
+        """
+        return self.sequence(feature.chrom,feature.start,feature.stop,feature.strand)
+
+    def splice_junctions(self,featureid,gffdb,padding=10):
+        """
+        Returns an iterator of spliced sequences for an mRNA, with *padding*
+        additional bp on either side of the junction (which is itself 2bp).
+
+        The *gffdb* needs to be specified so that the children exons can be
+        queried.  If you want to get splices for an entire gene, just call this
+        individually on each of that gene's mRNAs.
+        """
+        if type(featureid) is not str:
+            featureid = featureid.id
+        transcript = gffdb[featureid]
+        exons = list(gffdb.children(featureid,featuretype='exon',level=1))
+
+        exons.sort(key=lambda x: x.start)
+        for i,exon in enumerate(exons):
+            # we're on the last exon, which is not spliced to anything -- so
+            # we're done.
+            if i == len(exons)-1:
+                break
+            next_exon = exons[i+1]
+            seq1 = self.sequence(chrom=exon.chrom,
+                                 start=exon.stop-padding,
+                                 stop=exon.stop,
+                                 strand=exon.strand)
+            seq2 = self.sequence(chrom=next_exon.chrom,
+                                 start=next_exon.start,
+                                 stop=next_exon.start+padding, 
+                                 strand=next_exon.strand)
+            yield seq1+seq2
+
+            
+
+    def spliced_transcript(self,featureid,gffdb,featuretype='exon'):
+        """
+        Returns the spliced sequence of an mRNA, *featureid*.  *featureid* can
+        be either a string or a GFFFeature.
+
+        The *gffdb* needs to be specified so that the children exons can be
+        queried.
         
-        if seq.startswith('\n'):
-            # then shift it back one
-            start -= 1
+        *featuretype* is by default 'exon', which will give you the spliced
+        transcript along with UTRs (assuming the UTRs are annotated as exons,
+        which is the case in FlyBase GFF files).  If you'd prefer just the
+        coding sequence, then use featuretype='CDS'.
+        """
+        if type(featureid) is not str:
+            featureid = featureid.id
+
+        # get the exons and make sure they're in order
+        exons = list(gffdb.children(featureid,featuretype=featuretype,level=1))
+        exons.sort(key=lambda x: x.start)
+
+        seq = []
+        for exon in exons:
+            seq.append(self.sequence(chrom=exon.chrom,
+                                     start=exon.start,
+                                     stop=exon.stop,
+                                     strand=exon.strand))
+        return ''.join(seq)
+            
+
+def fasta_seqs_to_oneline(infn, outfn):
+    """
+    Converts a typical FASTA file *infn*, with many lines per sequence, into
+    one with a single long line for each sequence and saves this as *outfn*.
+    This new file can then be used with the Genome class for fast indexing into
+    the genome.
+    """
+    fout = open(outfn,'w')
+    for line in open(infn):
+        if line.startswith('>'):
+            fout.write(line)
+            continue
+        else:
+            fout.write(line.rstrip())
+    fout.close()
+
+def inspect_featuretypes(gfffn):
+    featuretypes = set()
+    for line in open(gfffn):
+        L = line.split('\t')
+        try:
+            featuretypes = featuretypes.union([L[2]])
+        except IndexError:
+            continue
+    return list(featuretypes)
         
-        self.mmap.seek(start)
-        seq = self.mmap.read(length+newlines)
-        return seq.replace('\n','')
 
-def intersect(features1, features2,ignore_strand=False):
+def clean_gff(gfffn,newfn=None,addchr=False,featuretypes_to_remove=None,sanity_check=True):
     """
-    Performs a pairwise intersection between 2 sets of features.
+    Helps prepare a GFF file *gfffn* for import into a database. The new,
+    cleaned file will be saved as *newfn* (by default, *newfn* will be *gfffn*
+    plus a ".cleaned" extension).
+    
+    Use the inspect_featuretypes() function in this module to determine what
+    featuretypes are contained in the GFF; then you can filter out those that
+    are not interesting by including them in the list of
+    *featuretypes_to_remove*
+
+    If *addchr* is True, the string "chr" will be prepended to the chromosome
+    name.
+
+    If *sanity_check* is True, only features that pass a simple check will be
+    output.  Currently the only sanity check is that coordinates are not
+    negative and that feature starts are not greater than feature stop coords.
+
+    Also, some GFF files have FASTA sequence at the end.  This function will
+    remove the sequence as well.
     """
-    intersections = []
-    if hasattr(features1,'next'):
-        features2 = list(features1)
-    if hasattr(features2,'next'):
-        features2 = list(features2)
+    if newfn is None:
+        newfn = gfffn+'.cleaned'
+    if featuretypes_to_remove is None:
+        featuretypes_to_remove = []
+    
+    fout = open(newfn,'w')
 
-    for feature1 in features1:
-        for feature2 in features2:
-            if feature1.chrom != feature2.chrom:
+    for line in open(gfffn):
+        if line.startswith('>'):
+            break
+        L = line.split('\t')
+    
+        try:
+            if L[2] in featuretypes_to_remove:
                 continue
-            if not ((feature1.stop > feature2.start) and (feature1.start < feature2.stop)):
+        except IndexError:
+            continue
+        
+        if sanity_check:
+            start = int(L[3])
+            stop = int(L[4])
+            if start<0 or stop<0 or (start>stop):
                 continue
-
-            maxstart = max( [feature1.start, feature2.start] )
-            minstop = min( [feature1.stop, feature2.stop] )
-            newfeature = GFFFeature(chrom=feature1.chrom,
-                                     source=None,
-                                     featuretype='intersection',
-                                     start=maxstart,
-                                     stop=minstop,
-                                     value=None,
-                                     strand=feature1.strand,
-                                     phase=None,
-                                     attributes=None)
-
-            intersections.append( newfeature )
-    for i in merge_features(intersections,ignore_strand=ignore_strand):
-        i.featuretype = 'intersection'
-        yield i
+        
+        if addchr:
+            fout.write('chr'+line)
+        else:
+            fout.write(line)
+    
+    fout.close()
 
 def create_gffdb(gfffn, dbfn):
     """
-    Reads in a GFF3 file and constructs a database for use with downstream
-    analysis.  See the GFFDB class in particular for an interface to this
-    database. 
+    Reads in a GFF3 file (with autodetection for *.gz files, based on
+    extension) and constructs a database for use with downstream analysis.  See
+    the GFFDB class in particular for an interface to this database. 
 
     This takes 2-3 min on a 100 MB GFF file for D. melanogaster.  This is a
     one-shot time investment, since once it's created using the database is
     quite fast.
 
-    Note that the % complete for the first step is a percentage of the lines in
-    the file.  Some GFF files have the entire sequence appended to the end
-    which may cause the percentages to appear low.
+    You may want to try the clean_gff() function on your GFF file, which can
+    add a 'chr' to the beginning of chromosome names (useful for FlyBase GFFs)
+    or remove featuretypes from the GFF that you're not interested in.  This
+    latter part can considerably speed up the database creation and subsequent
+    use.
     """
 
     # Calculate lines so you can display the percent complete
@@ -623,6 +754,8 @@ def create_gffdb(gfffn, dbfn):
         f = open(gfffn)
     nlines = 0.0
     for line in f:
+        if line.startwith('>'):
+            break
         nlines += 1
     f.close()
 
@@ -1208,7 +1341,6 @@ class GFFDB:
         for exon in merged_exons:
             total_exon_bp += len(exon)
         return total_exon_bp
-    
 
     def closest_feature(self,chrom,pos,strand=None,featuretype=None, ignore=None):
         """
@@ -1852,6 +1984,7 @@ class GFFDB:
         features.featuretype="gene"
         ''', (exonID,))
         return c.fetchone()[0]
+        
 
 class GTFDB(GFFDB):
     featureclass = GTFFeature
