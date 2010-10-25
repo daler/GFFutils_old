@@ -13,7 +13,16 @@ import mmap
 import string
 import copy
 import gzip
-import string
+
+class FeatureNotFoundError(Exception):
+    """
+    Error to be raised when an ID is not in the database.
+    """
+    def __init__(self, feature_id):
+        Exception.__init__(self)
+        self.feature_id = feature_id
+    def __str__(self):
+        return self.feature_id
 
 class GFFFeature(object):
     """
@@ -25,121 +34,105 @@ class GFFFeature(object):
         "attribute" fields.
         '''
         def __init__(self):
-            self._attrs = []  # will hold a list of attributes added to the object.
+            self._attrs = []  # will hold a list of attributes added to the
+                              # object.
 
-    def __init__(self, chrom, source, featuretype, start, stop,
-                 value,strand,phase,attributes,strvals=False):
+    def __init__(self, chrom=None, source=None, featuretype=None, start=None, stop=None,
+                 value=None,strand=None,phase=None,attributes=None,strvals=False):
         """
-        *chrom*
+        Represents a line in a GFF file.
+
+        *chrom*       : Chromosome
+        *source*      : Source of the data
+        *featuretype* : type of the feature ('gene', 'mRNA', 'CDS', etc)
+        *start*       : Start position on the chromosome
+        *stop*        : Stop position on the chromosome
+        *value*       : Value for the feature
+        *strand*      : Strand of the feature, '+' or '-'
+        *phase*       : Phase of the feature if it's a CDS
+        *attributes*  : A semicolon-delimited list of "field=data" strings.
+                        For example,
+                        'ID=FBtr0000123;Parent=FGgn0001;Name=transcript 1'
         
-            Chromosome
+        *strvals*     :  By default, GFFFeature objects will have their
+                         attributes typecast to integers, floats, etc.  However
+                         if *strvals* is True, ALL attributes will be strings.
+                         For example, with *strvals=False*, GFFFeature.start
+                         and GFFFeature.end be integers (useful for downstream
+                         work like ``featurelen = feature.stop -
+                         feature.start``) but if *strvals=True* they will be
+                         strings. 
         
-        *source*
-        
-            Source of the data
-        
-        *featuretype*
-        
-            type of the feature ('gene', 'mRNA', 'CDS', etc)
-        
-        *start*
-        
-            Start position on the chromosome
-        
-        *stop*
-            
-            Stop position on the chromosome
-        
-        *value*
-        
-            Value for the feature
-        
-        *strand*
-        
-            Strand of the feature, '+' or '-'
-        
-        *phase*
-        
-            Phase of the feature if it's a CDS
-        
-        *attributes*
-        
-            A semicolon-delimited list of "field=data" strings.  For example, 
-            'ID=FBtr0000123;Parent=FGgn0001;Name=transcript 1'
-        
-        *strvals*
-        
-            By default, GFFFeature objects will have their attributes typecast
-            to integers, floats, etc.  However if *strvals* is True, ALL
-            attributes will be strings.  For example, with *strvals=False*,
-            GFFFeature.start and GFFFeature.end be integers (useful for
-            downstream work like ``featurelen = feature.stop - feature.start``)
-            but if *strvals=True* they will be strings. 
-        
-            Setting *strvals=True* will speed up parsing.
+                         Setting *strvals=True* will speed up parsing.
         """
 
         if not strvals: # do typecasting
-            self.chrom=chrom
-            self.source=source
-            self.featuretype=featuretype
+            self.chrom = chrom
+            self.source = source
+            self.featuretype = featuretype
             try:
-                self.start=int(start)
-            except ValueError:
-                self.start = None
+                self.start = int(start)
+            except (ValueError,TypeError):
+                raise TypeError, 'start must be able to be converted to an integer'
             try:
-                self.stop=int(stop)
-            except ValueError:
-                self.stop = None
+                self.stop = int(stop)
+            except (ValueError,TypeError):
+                raise TypeError, 'stop must be able to be converted to an integer'
             if value is not None:
                 try:
-                    self.value=float(value)
-                except ValueError,TypeError:
-                    self.value=None
+                    self.value = float(value)
+                except (ValueError, TypeError):
+                    self.value = None
             else:
                 self.value = None
-            self.strand=strand
+            self.strand = strand
             if phase is not None:
                 try: 
-                    self.phase=int(phase)
-                except ValueError,TypeError:
-                    self.phase=None
+                    self.phase = int(phase)
+                except (ValueError, TypeError):
+                    self.phase = None
             else:
                 self.phase = None
           
         if strvals: # no typecasting, save everything as a string.
-            self.chrom=chrom
-            self.source=source
-            self.featuretype=featuretype
-            self.start=start
-            self.stop=stop
-            self.value=value
-            self.strand=strand
-            self.phase=phase
+            self.chrom = chrom
+            self.source = source
+            self.featuretype = featuretype
+            self.start = start
+            self.stop = stop
+            self.value = value
+            self.strand = strand
+            self.phase = phase
 
         self._parse_attributes(attributes)
 
-    def _parse_attributes(self,attributes):  
-        self._strattributes = attributes # keep track of these for later printing out.
+    def _parse_attributes(self, attributes):  
+        """
+        Method to parse the attributes field of a line in a GFF file.
+        """
+        # keep track of these for later printing out.
+        self._strattributes = attributes 
+
         if attributes is None:
             self._strattributes = ''
-        # parse "attributes" field of the GFF line and insert them into an Attributes 
-        # object.
+        # parse "attributes" field of the GFF line and insert them into an
+        # Attributes object.
         self.attributes = GFFFeature.Attributes()
         if attributes is not None:
             items = attributes.split(';')
             for item in items:
-                if len(item) > 0:
-                    field,value = item.split('=')
+                if len(item) == 0:
+                    continue
+                field,value = item.split('=')
                 field = field.strip()
                 values = value.split(',')
                 values = [i.strip() for i in values]
-                setattr(self.attributes,field,values)
+                setattr(self.attributes, field,values)
 
-                # Keep track inside the Attributes object of what you added to it
+                # Keep track inside the Attributes object of what you added to
+                # it
                 self.attributes._attrs.append(field)
         
-
     @property
     def id(self):
         try:
@@ -152,7 +145,7 @@ class GFFFeature(object):
         """Attribute *chr* now deprecated -- please use *chrom* instead"""
         return self.chrom
 
-    def add_attribute(self,attribute,value):
+    def add_attribute(self, attribute, value):
         """
         Add an attribute to this feature.
 
@@ -166,47 +159,81 @@ class GFFFeature(object):
             value = [value]
 
         # Strings are subscriptable, but should be wrapped as a list.
-        if type(value) == str:
+        if isinstance(value, basestring):
             value = [value]
-        setattr(self.attributes,attribute,value)
+        setattr(self.attributes, attribute, value)
         self.attributes._attrs.append(attribute)
-        attr = ','.join(value)
-        self._strattributes+=';%s=%s' % (attribute,attr)
+        attr = ','.join(map(str,value))
+        old_attrs = self._strattributes.split(';')
+        old_attrs.append('%s=%s'%(attribute,attr))
+        old_attrs = [i for i in old_attrs if len(i)>0]
+        self._strattributes = ';'.join(old_attrs)+';'
 
-    def remove_attribute(self,attribute):
+        #self._strattributes += ';%s=%s' % (attribute, attr)
+
+    def remove_attribute(self, attribute):
         """
-        Delete attribute from this feature.
+        Delete attribute from this feature.  This method also removes the
+        attribute from the equivalent GFF attributes string.  That is, if the
+        starting attributes looked like this::
+
+            ID=gene001;size=100kb;
+
+        and you used remove_attribute('size'), then the new attributes string
+        would look like::
+
+            ID=gene001;
         """
         delattr(self.attributes, attribute)
         self.attributes._attrs.remove(attribute)
         ind1 = self._strattributes.find(attribute)
-        ind2 = self._strattributes.find(';',ind1)
-        self._strattributes = self._strattributes[:ind1]+self._strattributes[ind2:-1]
+        ind2 = self._strattributes.find(';', ind1)
+        self._strattributes = self._strattributes[:ind1] + self._strattributes[ind2:-1]
 
-    def to_bed(self,fieldcount=3):
+    def to_bed(self, fieldcount=3):
         """
         Returns the feature as a BED format line, with number of fields
         *fieldcount*.  Default is 3, which is chrom, start, stop.  Up to BED-6
         is supported.
+
+        Note that a newline is added to the end of the string.  This allows for
+        nice semantics like::
+            
+            >>> fout = open('genes.bed','w')
+            >>> for gene in G.features_of_type('gene'):
+            ...     fout.write(gene.to_bed(6))
+            >>> fout.close()
         """
-        attrs = ['chrom','start','stop','id','value','strand']
+        attrs = ['chrom', 'start', 'stop', 'id', 'value', 'strand']
+         
         fields = []
+        if self.start is None:
+            raise ValueError, 'feature start is None; need an integer to convert to BED'
+        if self.stop is None:
+            raise ValueError, 'feature start is None; need an integer to convert to BED'
         for i in range(fieldcount):
             if attrs[i] == 'start':
-                fields.append(str(getattr(self,'start')-1))
+                fields.append(str(getattr(self, 'start')-1))
             else:
-                fields.append(str(getattr(self,attrs[i])))
+                fields.append(str(getattr(self, attrs[i])))
         return '\t'.join(fields)+'\n'
 
     def __repr__(self):
-        return "%s %s '%s': %s:%s-%s (%s)" % (self.__class__.__name__,self.featuretype,self.id,self.chrom,self.start,self.stop, self.strand)
+        return "%s %s '%s': %s:%s-%s (%s)" % (self.__class__.__name__, 
+                                              self.featuretype,
+                                              self.id,
+                                              self.chrom,
+                                              self.start,
+                                              self.stop, 
+                                              self.strand)
 
     def __len__(self):
         return self.stop-self.start
    
     @property
     def TSS(self):
-        """The transcription start site of the feature.  This is simply the
+        """
+        The transcription start site of the feature.  This is simply the
         strand-specific start of the feature.  Returns None if no strand
         specified.
         """
@@ -214,42 +241,51 @@ class GFFFeature(object):
             return self.start
         if self.strand == '-':
             return self.stop
+        else:
+            raise ValueError, 'TSS not defined for feature with strand=%s' % self.strand
     
     @property
     def midpoint(self):
-        """Convenience accessor for getting the midpoint of a feature.
         """
-        return self.start + (self.stop-self.start)/2
+        Convenience accessor for getting the midpoint of a feature.
+        """
+        try:
+            return self.start + (self.stop-self.start)/2
+        except (TypeError,ValueError):
+            raise ValueError, 'feature start and stop must be integers'
+            
 
     def tostring(self):
-        """Prints the GFF record suitable for writing to file (newline included).
+        """
+        Prints the GFF record suitable for writing to file (newline included).
         
         Since the string output is reconstructed based on the current contents
         of the GFFFeature, (attributes are reconstructed as well), this
         provides an easy means of editing GFF files, e.g.::
             
-            # shorten all CDS features by 10 bp, rename features to "*.short",
-            # and write only these shortened CDSs to file.
+            >>> # shorten all CDS features by 10 bp, rename features to "*.short",
+            >>> # and write only these shortened CDSs to file.
+            >>> fout = open('out.gff')
+            >>> for feature in GFFFile('in.gff'):
+            ...     if feature.featuretype != 'CDS':
+            ...         continue
+            ...     feature.stop -= 10
+            ...     feature.attributes.ID += '.short'
+            ...     fout.write(feature.tostring())
+            >>> fout.close()
 
-            fout = open('out.gff')
-            for feature in GFFFile('in.gff'):
-                if feature.featuretype != 'CDS':
-                    continue
-                feature.stop -= 10
-                feature.attributes.ID += '.short'
-                fout.write(feature.tostring())
-            fout.close()
-
-        In the interest of speed, does not do error-checking.
+        In the interest of speed, does not do any error-checking.
         """
         # Reconstruct the attributes field
         attributes = []
         for attr in self.attributes._attrs:
-            values = getattr(self.attributes,attr)
-            values = map(str,values)
+            values = getattr(self.attributes, attr)
+            values = map(str, values)
             values = ','.join(values)
-            attributes.append(attr+'='+values)
+            attributes.append(attr + '='+values)
         attributes = ';'.join(attributes)
+        if len(attributes) > 0:
+            attributes += ';'
 
         items = [self.chrom, 
                  self.source,
@@ -286,12 +322,12 @@ class GFFFile(object):
 
     featureclass = GFFFeature
 
-    def __init__(self,f,strvals=False):
+    def __init__(self, fname, strvals=False):
         """
-        *f*
+        *fname*
 
             GFF filename.  Can be a string filename (.gz files detected via extension)
-            or, if *f* is not a string type, it can be a file-like object (sys.stdout, 
+            or, if *fname* is not a string type, it can be a file-like object (sys.stdout, 
             already-open file, StringIO, etc).
 
         *strvals*
@@ -304,23 +340,25 @@ class GFFFile(object):
 
             Setting *strvals=True* will speed up parsing.
         """
-        if type(f) is str:
+        if type(fname) is str:
             self.stringfn = True
-            if os.path.splitext(f)[-1] == '.gz':
-                self.file = gzip.open(f)
+            if os.path.splitext(fname)[-1] == '.gz':
+                self.file = gzip.open(fname)
             else:
-                self.file = open(f)
+                self.file = open(fname)
         else:
             self.stringfn = False
-            self.file = f
+            self.file = fname
         self.strvals = strvals
 
     def __iter__(self):
-        """Iterator function.  Yields a gfffeature object for each line."""
+        """
+        Yields a GFFFeature object for each line.
+        """
         f = self.file
         for line in f:
-            # You've reached the end of the GFF file; this represents the start of 
-            # the optional sequence section
+            # You've reached the end of the GFF file; this represents the start
+            # of the optional sequence section
             if line.startswith('>'):
                 raise StopIteration
             line = line.rstrip()
@@ -340,14 +378,6 @@ class GFFFile(object):
         if self.stringfn:
             f.close()
     
-    def __eq__(self,other):
-        if self._strattributes != other._strattributes:
-            return False
-        for attr in ['id','featuretype','start','stop','chrom']:
-            if getattr(self,attr) != getattr(other,attr):
-                return False
-        return True
-
     def __repr__(self):
         return 'gfffile object (file=%s)' % (self.file)
 
@@ -355,12 +385,22 @@ class GTFFeature(GFFFeature):
     """
     Class to represent a GTF feature and its annotations. Subclassed from GFFFeature.
     """
-    def __init__(self, id, chrom, source, featuretype, start, stop,
-                 value,strand,phase,attributes,strvals=False):
-        #print id,chrom,source,featuretype,start,stop,value,strand,phase,attributes
-        GFFFeature.__init__(self,chrom,source,featuretype,start,stop,value,strand,phase,attributes,strvals)
+    def __init__(self, id=None, chrom=None, source=None, featuretype=None, start=None, stop=None,
+                 value=None, strand=None, phase=None, attributes=None, strvals=False):
+        GFFFeature.__init__(self,
+                            chrom,
+                            source,
+                            featuretype,
+                            start,
+                            stop,
+                            value,
+                            strand,
+                            phase,
+                            attributes,
+                            strvals)
         self._strattributes = ''
-        self.add_attribute('ID',id)
+        if id is not None:
+            self.add_attribute('ID', id)
     
     def tostring(self):
         """
@@ -380,10 +420,10 @@ class GTFFeature(GFFFeature):
         # Reconstruct the attributes field
         attributes = ''
         for attr in self.attributes._attrs:
-            values = getattr(self.attributes,attr)
+            values = getattr(self.attributes, attr)
             if type(values) is list:
-                values = ','.join(map(str,values))
-            attributes += attr+' '+'"'+str(values)+'"; '
+                values = ','.join(map(str, values))
+            attributes += attr+' '+'"' + str(values)+'"; '
 
         items = [self.chrom, 
                  self.source,
@@ -403,7 +443,7 @@ class GTFFeature(GFFFeature):
                 printables.append(str(item))
         return '\t'.join(printables).rstrip()+'\n'
 
-    def add_attribute(self,attribute,value):
+    def add_attribute(self, attribute, value):
         """
         Add an attribute to this feature.
 
@@ -419,44 +459,55 @@ class GTFFeature(GFFFeature):
         # Strings are subscriptable, but should be wrapped as a list.
         if type(value) == str:
             value = [value]
-        setattr(self.attributes,attribute,value)
+        setattr(self.attributes, attribute, value)
         self.attributes._attrs.append(attribute)
-        assert len(value) == 1, 'Multiple values for one attribute not currently supported for GTF features'
-        self._strattributes+=';%s "%s"' % (attribute,value[0])
+        msg = 'Multiple values for one attribute not currently supported for \
+        GTF features'
+        assert len(value) == 1, msg 
+        
+        old_attrs = self._strattributes.split(';')
+        old_attrs.append('%s "%s"'%(attribute,value[0]))
+        old_attrs = [i for i in old_attrs if len(i)>0]
+        self._strattributes = ';'.join(old_attrs)+';'
+  
+        #self._strattributes += ';%s "%s"' % (attribute, value[0])
 
-    def remove_attribute(self,attribute):
+    def remove_attribute(self, attribute):
         """
         Delete attribute from this feature.
         """
         delattr(self.attributes, attribute)
         self.attributes._attrs.remove(attribute)
         ind1 = self._strattributes.find(attribute)
-        ind2 = self._strattributes.find(';',ind1)
-        self._strattributes = self._strattributes[:ind1]+self._strattributes[ind2:]
+        ind2 = self._strattributes.find(';', ind1)
+        self._strattributes = self._strattributes[:ind1] + self._strattributes[ind2:-1]
 
-    def _parse_attributes(self,attributes):
+    def _parse_attributes(self, attributes):
         """
         Parse the attributes.  This is where GTF differs from GFF format.
         """
-        self._strattributes = attributes # keep track of these for later printing out.
+        # keep track of these for later printing out.
+        self._strattributes = attributes 
 
-        # parse "attributes" field of the GTF line and insert them into an Attributes 
-        # object.
+        # parse "attributes" field of the GTF line and insert them into an
+        # Attributes object.
         self.attributes = GTFFeature.Attributes()
         if attributes is not None:
             items = attributes.split(';')
             for item in items:
                 if len(item) == 0:
                     continue
-                field,value = item.strip().split()
+                field, value = item.strip().split()
+
                 value = value.replace('"','')
                 try:
                     value = float(value)
-                except:
+                except (ValueError, TypeError):
                     pass
-                setattr(self.attributes,field,value)
+                setattr(self.attributes, field, value)
 
-                # Keep track inside the Attributes object of what you added to it
+                # Keep track inside the Attributes object of what you added to
+                # it
                 self.attributes._attrs.append(field)
         
            
@@ -491,31 +542,43 @@ class Genome:
     For now, FASTA files must have their sequence all on one line. Use the
     fasta_seqs_to_oneline() function to make a file like this.
 
-
-
     Example usage::
 
         >>> g = Genome('dm3.fa')
         >>> nucleotides = g.sequence('chr2L',12000,13000)
     """
-    def __init__(self,fn,debug=False):
+    def __init__(self, fn, debug=False):
         """
         *fn* is a FASTA-format file.
         """
         # Keep track of the starting position of each chromosome in self.startinds
         self.startinds = {}
+        self.chromorder = []
         self.chromfiles = {}
+        self.chromlens = {}
         self.namestarts = {}
         f = open(fn)
-        m = mmap.mmap(f.fileno(),0,access=mmap.ACCESS_READ)
+        m = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
         ind1 = 0
         m.seek(0)
+        last_chrom = None
         while True:
             # Find the next occurrence of the fasta header delimiter.
             ind1 = m.find('>')
+        
+            # Assume that just before the ">" was a newline which indicated the
+            # end of the last sequence. This will be -1 if we're on the first
+            # chromosome, or -2 if there are no more ">" left in the file.
+            end_of_last_seq = ind1-1
+            
 
-            # find() returns -1 if nothing found.
+            # find() returns -1 if nothing found, so if no more "> then break
+            # out of the loop.
             if ind1 == -1:
+                # assume the end of the last sequence is the end of the file.
+                # But subtract 1, because we assume the file ends with a
+                # newline.
+                end_of_last_seq = m.size()-1
                 break
 
             # scoot up to the ">", and find the position of the newline at the end.
@@ -526,6 +589,10 @@ class Genome:
             # the newline (recall Python's half-open intervals, hence ind2
             # instead of ind2-1)
             chrom = m[ind1+1:ind2]
+
+            # keep track of the order of chroms -- this will be used along with
+            # the startinds to figure out the lengths of chromosomes.
+            self.chromorder.append(chrom)
             
             if debug:
                 print chrom, ind1, ind2
@@ -535,8 +602,21 @@ class Genome:
 
             # keep track of where the name starts
             self.namestarts[chrom] = ind1
+
+            # Now that we're on the next chrom we can fill in the length of the
+            # last one.
+            if last_chrom is not None:
+                self.chromlens[last_chrom] = end_of_last_seq - self.startinds[last_chrom]
+            last_chrom = chrom
+
+            # move to the newline.
             m.seek(ind2)
 
+        
+        # fill in the length of this last one.
+        self.chromlens[last_chrom] = end_of_last_seq - self.startinds[last_chrom]
+
+        
         ### TODO: the code below is a sketch of what to do about multimapping
         #   multiline FASTAs...but not working at the moment.
         
@@ -569,7 +649,9 @@ class Genome:
 
         If *strand* is '-', the reverse complement is returned.
         """
-        
+        if stop > self.chromlens[chrom]:
+            raise ValueError,'stop position %s out of range for chrom %s of len %s)' % (stop,chrom,self.chromlens[chrom])
+
         # the chromosome start position
         i = self.startinds[chrom]
         
@@ -665,15 +747,28 @@ def fasta_seqs_to_oneline(infn, outfn):
     the genome.
     """
     fout = open(outfn,'w')
+    nchrom = 0
     for line in open(infn):
         if line.startswith('>'):
-            fout.write(line)
+            if nchrom == 0:
+                fout.write(line)
+            else:
+                fout.write('\n')
+                fout.write(line)
+            nchrom += 1
             continue
         else:
             fout.write(line.rstrip())
+    # write a newline at the very end.
+    fout.write('\n')
     fout.close()
 
 def inspect_featuretypes(gfffn):
+    """
+    Returns a list of unique featuretypes in the GFF file, *gfffn*.  Useful for
+    when you're about to clean up a GFF file and you want to know which
+    featuretypes to exclude in the cleaned GFF.
+    """
     featuretypes = set()
     for line in open(gfffn):
         L = line.split('\t')
@@ -738,9 +833,9 @@ def clean_gff(gfffn,newfn=None,addchr=False,featuretypes_to_remove=None,sanity_c
 
 def create_gffdb(gfffn, dbfn):
     """
-    Reads in a GFF3 file (with autodetection for *.gz files, based on
-    extension) and constructs a database for use with downstream analysis.  See
-    the GFFDB class in particular for an interface to this database. 
+    Reads in a GFF3 file (with autodetection and support for *.gz files, based
+    on extension) and constructs a database for use with downstream analysis.
+    See the GFFDB class in particular for an interface to this database. 
 
     This takes 2-3 min on a 100 MB GFF file for D. melanogaster.  This is a
     one-shot time investment, since once it's created using the database is
@@ -751,6 +846,47 @@ def create_gffdb(gfffn, dbfn):
     or remove featuretypes from the GFF that you're not interested in.  This
     latter part can considerably speed up the database creation and subsequent
     use.
+
+    The database requires features to have unique names (the ID attribute).  If
+    there is no "ID" attribute, then the feature will be named according to its
+    featuretype and an incrementing counter and with an "unnamed" prefix.  For
+    example, the first exon in the file to not have an ID attribute will be
+    called "unnamed_exon:1".
+
+    Note that these labels are not stable across multiple GFF files!  Adding
+    your own feature IDs directly to the GFF file is the most robust solution.
+
+
+    IMPLEMENTATION:
+
+    There are two tables in the database. 
+    
+    The "features" table contains the fields of the GFF line -- chrom, start,
+    stop, strand, featuretype, value, source, phase, attributes.  It also
+    contains the "id" field, which is a unique ID for each feature.
+
+    CREATE TABLE features (
+                            id text, 
+                            chrom text, 
+                            start int, 
+                            stop int, 
+                            strand text,
+                            featuretype text,
+                            value float, 
+                            source text,
+                            phase text,
+                            attributes text,
+                            primary key (id)
+                          );
+CREATE TABLE relations (parent text, child text, level int, primary key(parent,child,level) );
+CREATE INDEX childindex on relations (child);
+CREATE INDEX featuretypes on features(featuretype);
+CREATE INDEX ids ON features (id);
+CREATE INDEX parentindex on relations (parent);
+CREATE INDEX starts on features(start);
+CREATE INDEX startstrand on features(start, strand);
+CREATE INDEX stops on features(stop);
+CREATE INDEX stopstrand on features(stop,strand);
     """
 
     # Calculate lines so you can display the percent complete
@@ -760,7 +896,7 @@ def create_gffdb(gfffn, dbfn):
         f = open(gfffn)
     nlines = 0.0
     for line in f:
-        if line.startwith('>'):
+        if line.startswith('>'):
             break
         nlines += 1
     f.close()
@@ -1221,7 +1357,14 @@ class GFFDB:
     featureclass = GFFFeature
     add_id = ''
     def __init__(self,db_fn):
-        """*db_fn* is the filename of the database to use"""
+        """
+        Class to interface with a database created by the create_gffdb()
+        function.
+        
+        *db_fn* is the filename of the database to use.  See the help for
+        create_gffdb() for much more information on the creation and design
+        ideas behind the database.
+        """
         self.db_fn = db_fn
         self.conn = sqlite3.connect(db_fn)
         self.conn.text_factory = str
@@ -1235,14 +1378,16 @@ class GFFDB:
                   strand, phase, attributes from features where id = ?
                   ''' % self.__class__.add_id, (id,))
         results = c.fetchall()
-        assert len(results) == 1, len(results)
+        if not len(results) == 1:
+            raise FeatureNotFoundError(id)
         return self.__class__.featureclass(*results[0])
 
     def attribute_search(self,text,featuretype='gene'):
         """
         Looks for *text* within the "attributes" field of features of
-        *featuretype*.  Useful for looking up genes based on symbol or name
-        rather than accession number.  Returns a list of matching GFFFeatures.
+        *featuretype* ('gene' by default).  Useful for looking up genes based
+        on symbol or name rather than accession number.  Returns a list of
+        matching GFFFeatures.
 
         Uses SQL's LIKE operator, which is case-insensitive.
         """
@@ -1278,7 +1423,7 @@ class GFFDB:
 
         For more complicated stuff, (e.g., filtering by multiple chromosomes)
         you'll probably want to use self.execute() directly and write your own
-        queries.
+        SQL queries . . . or just call this method iteratively.
         """
         filter_clause = ''
         if chrom is not None:
@@ -1334,7 +1479,8 @@ class GFFDB:
     def exonic_bp(self,id,ignore_strand=False):
         """
         Merges all exons of the gene *id* and sums the total bp.
-        *ignore_strand* is passed to merge_features().
+        *ignore_strand* is passed to merge_features(). Useful for calculating
+        RPKM for full gene models.
         """
         if isinstance(id, self.__class__.featureclass):
             id = id.id
@@ -1350,7 +1496,8 @@ class GFFDB:
 
     def closest_feature(self,chrom,pos,strand=None,featuretype=None, ignore=None):
         """
-        Finds the closest feature.  It's up the caller to determine things like
+        Returns the closest feature and the distance to the start position of
+        that feature from *pos*.  It's up the caller to determine things like
         upstream/downstream, TSS, TTS, midpoints, etc.
 
         *ignore* is either None (default) or a list of IDs that you would like
@@ -1359,13 +1506,40 @@ class GFFDB:
         If you are providing the *chrom*, *pos* of a gene's TSS, then you will
         have to add that gene's ID to the *ignore* list so you don't get that
         same gene returned as the closest (which it is).  
+        
+        In this case, you'll probably want to provide *featuretype* too (e.g.,
+        featuretype='gene') -- otherwise you'll also have to add the gene's
+        mRNAs, exons, introns, CDSs, and any other related features to the
+        *ignore* list.
 
-        The *ignore* list also makes it possible to get the next-closest
-        feature to a coord by first getting the closest, then adding that ID to
-        the *ignore* list and calling this method again.
+        The *ignore* list also makes it possible to get the second-closest
+        feature to a coord by calling this method to get the closest feature,
+        then adding that closest feature's ID to the *ignore* list and calling
+        this method a second time.
 
         Note that providing a *featuretype* and *strand* will speed things up
         considerably.
+
+        To illustrate, here is a somewhat contrived example usage to get
+        closest upstream TSS on the plus strand to the genomic position
+        "chr2L:5000000" (and stop looking if there's nothing within 1Mb)::
+
+            >>> chrom = 'chr2L'
+            >>> pos = 5000000
+            >>> closest_pos = pos+1
+            >>> closest_feature = None
+            >>> strand = None
+            >>> ignore = []
+            >>> while (closest_pos > pos) or (strand !='-'):
+            ...     dist,closest_feature = G.closest_feature(chrom=chrom,pos=pos,ignore=ignore,featuretype='gene')
+            ...     strand = closest_feature.strand
+            ...     ignore.append(closest_feature.id)
+            ...     closest_pos = closest_feature.TSS
+            ...     if dist > 1e6:
+            ...         closest_feature = None
+            ...         break
+
+
         """
         # e.g., AND id != FBgn0001 AND id != FBgn0002
         ignore_clause = ''
@@ -1377,7 +1551,7 @@ class GFFDB:
         
         strand_clause = ''
         if strand is not None:
-            strand_clause = ' AND strand=%s ' % strand
+            strand_clause = ' AND strand="%s" ' % strand
         
         featuretype_clause = ''
         if featuretype is not None:
@@ -1408,24 +1582,24 @@ class GFFDB:
         closest_stop = c.fetchone()
 
         candidates = [closest_start,closest_stop]
+        candidates = [i for i in candidates if i is not None] 
+        if len(candidates) == 0:
+            return None,None
+
         candidates.sort(key=lambda x: x[0])
-        
         dist,feature_id = candidates[0]
-        
         return dist, self[feature_id]
 
     def closest_TSS(self, chrom, pos, featuretype='gene', strand=None, ignore=None, direction=None):
         raise DeprecationWarning, "closest_TSS() is now deprecated -- please use closest_feature() instead, which relies on the caller for more complex manipulation"
 
-    def overlapping_features(self,chrom,start,stop,featuretype=None,strand=None, completely_within=False):
+    def overlapping_features(self, chrom, start, stop, featuretype=None, strand=None, completely_within=False):
         """
         Returns an iterator of features of type *featuretype* that overlap the
         coords provided. If *featuretype* is None (default), then all features
         will be returned.
 
-        If *ignore_strand* is True, features of any strand will be returned.
-        If *ignore_strand* is False (default) then only return overlapping
-        features on the same strand as *id*.
+        If *strand* is not None, then only features of the strand specifed will be returned.
 
         If *completely_within* is True, a feature needs to be completely within
         the boundaries of *id*.  If False (default), features that extend out
@@ -1459,23 +1633,34 @@ class GFFDB:
 
     def merge_features(self, features, ignore_strand=False):
         """
+        Returns an iterator of merged features (overlapping features are
+        combined into one, spanning from the lowest start to the highest stop
+        position)
+
         *features* is an iterable of features that you want to merge together.
 
-        Will be converted into a list because it needs to sort the features.
-
-        Returns an iterator of the merged features.
-
-        *features* must be all on the same strand.  The new *featuretype* will be a 
-        joining of the various featuretypes that were provided.
+        *features* will be converted into a list because this method needs to
+        sort the features.
 
         If *ignore_strand* is True, strand will be forced to all '+' and no checking
         will be done on the input
+
+        If *ignore_strand* is False (default), then *features* must be all on
+        the same strand.  
+        
+        The new *featuretype* will be a joining of the various featuretypes
+        that were provided.  If all the features were 'exon', then the new,
+        merged feature will have a featuretype of 'merged_exon'.  If there were
+        some introns in *features*, then the new merged feature will have a
+        featuretype of 'merged_exon_intron'.
+        
+        Note that merged features are not saved to the database -- they are
+        created on-the-fly and only exist in memory.
         """
         # If it quacks like an iterator...then turn it into a list.
         if hasattr(features,'next'):
             features = list(features)
         
-
         # Quick function to sort by start position
         def start_pos(x):
             return x.start
@@ -1483,35 +1668,35 @@ class GFFDB:
         # Sort 'em by start position
         features.sort(key=start_pos)
         
-        # Not sure how to deal with multiple strands...
-        if not ignore_strand:
+        # Either set all strands to '+' or check for strand-consistency.
+        if ignore_strand:
+            strand = '+'
+        else:
             strands = [i.strand for i in features]
             if len(set(strands))> 1:
                 raise ValueError, 'Specify ignore_strand=True to force merging of multiple strands'
             strand = strands[0]
-        else:
-            strand = '+'
         
-        # ...or multiple chromosomes
+        # Sanity check to make sure all features are from the same chromosome.
         chroms = [i.chrom for i in features]
         if len(set(chroms)) > 1:
-            raise NotImplementedError, 'Merging multiple chromosomes not implemented yet'
+            raise NotImplementedError, 'Merging multiple chromosomes not implemented'
         chrom = chroms[0]
 
         # If they were all exons, merged objects will have featuretype
         # 'merged_exon'.  If features included both exon and CDS, will have
         # featuretype 'merged_exon_CDS'.
-
         featuretypes = list(set([i.featuretype for i in features]))
         featuretypes.sort()
         featuretypes = '_'.join(featuretypes)
         featuretype = 'merged_%s' % featuretypes
 
-        for i,feature in enumerate(features):
-            if i == 0:
-                current_merged_start = feature.start
-                current_merged_stop = feature.stop
-                continue
+        # To start, we create a merged feature of just the first feature.
+        current_merged_start = features[0].start
+        current_merged_stop = features[0].stop
+
+        # We don't need to check the first one, so start at feature #2.
+        for feature in features[1:]:
             # Does this feature start within the currently merged feature?...
             if feature.start <= current_merged_stop+1:
                 # ...It starts within, so leave current_merged_start where it
@@ -1559,25 +1744,32 @@ class GFFDB:
         """
         Given an iterable of *features*, returns an iterator of new features
         defined by the intervening space between each consecutive feature and
-        the one before it.
-
+        the one before it. 
+        
         If you provide N features, you'll get back N-1 intervening features.
+
+        So if *features* contains the exons of a transcript, this method will
+        return the introns.
         
         This is a purposefully naive method that does NOT do sorting or merging
         -- it simply returns the intervening space between the features provided.
 
-        So if *features* contains the exons of a transcript, this method will
-        return the introns.
-
         If the features returned are not sorted, you may get overlapping
         results.
 
-        Example for getting all the 'non-exonic' space::
+        Example for getting all the 'non-exonic' space on the plus strand of
+        chrX::
             
-            # merge_features needs a single chrom and single strand
-            exons = G.features_of_type('exon',chrom='chrX',strand='+')
-            merged_exons = G.merge_features(exons)
-            non_exonic = G.interfeatures(merged_exons)
+            >>> # merge_features needs a single chrom and single strand
+            >>> exons = G.features_of_type('exon',chrom='chrX',strand='+')
+            >>> merged_exons = G.merge_features(exons)
+            >>> non_exonic = G.interfeatures(merged_exons)
+
+        Example for getting the introns of a transcript::
+
+            >>> transcript = G.random_feature('mRNA')
+            >>> exons = G.children(transcript,'exon')
+            >>> introns = G.interfeatures(exons)
         """
         for i,feature in enumerate(features):
             if i == 0:
@@ -1627,11 +1819,16 @@ class GFFDB:
         return [i[0] for i in c.fetchall()]
  
     def children(self,id,level=1,featuretype=None):
-        '''Returns an iterator of the children *level* levels away.  Immediate
+        """
+        Returns an iterator of the children *level* levels away.  Immediate
         children are level=1; "grandchildren" are level=2.  The child
         transcripts of a gene will be at level=1; the child exons of the same
         gene are at level=2.  Returns an error if there are not enough levels
-        of children for the level specified.'''
+        of children for the level specified.
+        """
+
+        if level > 2:
+            raise NotImplementedError, 'Levels > 2 not supported yet.'
 
         if isinstance(id, self.__class__.featureclass):
             id = id.id
@@ -1643,23 +1840,27 @@ class GFFDB:
             featuretype_clause = ' AND features.featuretype = "%s"' % featuretype
 
         cursor.execute('''
-            SELECT DISTINCT
-            %s chrom, source, featuretype, start, stop, value, strand, phase, attributes 
-            FROM features JOIN relations 
-            ON relations.child = features.id
-            WHERE relations.parent = ? 
-            AND relations.level = ? 
-            %s
-            ORDER BY start''' % (self.__class__.add_id, featuretype_clause),(id,level))
+        SELECT DISTINCT
+        %s chrom, source, featuretype, start, stop, value, strand, phase, attributes 
+        FROM features JOIN relations 
+        ON relations.child = features.id
+        WHERE relations.parent = ? 
+        AND relations.level = ? 
+        %s
+        ORDER BY start''' % (self.__class__.add_id, featuretype_clause),(id,level))
         for i in cursor:
             yield self.__class__.featureclass(*i)
 
     def parents(self,id,level=1,featuretype=None):
-        '''Returns an iterator of the parents *level* levels away.  Immediate
+        """
+        Returns an iterator of the parents *level* levels away.  Immediate
         children are level=1; "grandchildren" are level=2.  The child
         transcripts of a gene will be at level=1; the child exons of the same
         gene are at level=2.  Returns an error if there are not enough levels
-        of children for the level specified.'''
+        of children for the level specified."""
+
+        if level > 2:
+            raise NotImplementedError, 'Levels > 2 not supported yet.'
 
         if isinstance(id, self.__class__.featureclass):
             id = id.id
@@ -1699,7 +1900,7 @@ class GFFDB:
         
         Caveats: 
 
-            cdsStart and cdsEnd are the min and max positions, respectively, of all CDSs in the gene.
+            cdsStart and cdsEnd are the min and max positions, respectively, of all CDSs in the _gene_.
             So a particular isoform's CDS may not actually start on the gene-wide minimum CDS position.
 
             Assumes that there was an attribute in the GFF file called 'Name'.  This will then be
@@ -1749,9 +1950,9 @@ class GFFDB:
 
     def count_features_of_type(self,featuretype):
         """
-        More memory efficient than the functionally equivalent
-        ::
-            len(list(self.features_of_type(featuretype)))
+        More memory efficient than the functionally-equivalent::
+
+            >>> len(list(self.features_of_type(featuretype)))
         """
         c = self.conn.cursor()
         c.execute('''
@@ -1781,7 +1982,9 @@ class GFFDB:
         'gene' or 'mRNA') then first try and go up to *dist* bp upstream from
         feature start.  If there is another feature of the specified
         featuretype within *dist* upstream on either strand, then the promoter
-        region returned will be truncated to stop at this feature.
+        region returned will be truncated to stop at this feature.  This is
+        useful if you don't want your promoter regions to overlap with another
+        gene.
         
         If *truncate_at_next_feature* is not None AND *bidirectional* is True,
         then the downstream distance will not be truncated.
@@ -1928,7 +2131,8 @@ class GFFDB:
         """
         Returns an iterator of genes that contain CDSs. Useful for if you want
         to exclude tRNA, various ncRNAs, etc, since they are also annotated
-        with featuretype "gene".
+        with featuretype "gene" and contain 'exon' features (at least in
+        FlyBase GFFs)
         """
         for g in self.features_of_type('gene'):
             for grandchild in self.children(g.id, level=2):
