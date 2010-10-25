@@ -1,0 +1,5 @@
+chr2L	.	gene	19	127	.	+	.	ID=gene1;
+chr2L	.	mRNA	19	127	.	+	.	ID=transcript1;Parent=gene1;
+chr2L	.	exon	19	51	.	+	.	ID=exon1;Parent=transcript1;
+chr2L	.	exon	65	92	.	+	.	ID=exon2;Parent=transcript1;
+chr2L	.	exon	98	127	.	+	.	ID=exon3;Parent=transcript1;
