@@ -107,5 +107,5 @@ chr2L	FAKE	exon	10000	11000	.	-	.	gene_id "Fk_gene_1"; transcript_id "transcript
 chr2L	FAKE	start_codon	10000	11002	.	-	.	gene_id "Fk_gene_1"; transcript_id "transcript_Fk_gene_1";
 chr2L	FAKE	stop_codon	11001	11003	.	-	.	gene_id "Fk_gene_1"; transcript_id "transcript_Fk_gene_1";
 #
-# fake gene 2, which is non-coding
+# fake gene 2, which is non-coding -- say, a snoRNA
 chr2L	FAKE	exon	11500	12500	.	-	.	gene_id "Fk_gene_2"; transcript_id "transcript_Fk_gene_2";

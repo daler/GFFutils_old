@@ -1102,6 +1102,25 @@ class TestGFFDBClass(GenericDBClass):
 
 class TestGTFDBClass(GenericDBClass):
     featureclass = 'GTF'
+    def UTR_test(self):
+        
+        observed = self.G.UTRs(self.G['FBtr0300689'])
+        expected = [
+                    self.Feature(chrom='chr2L',start=7529,stop=7679,strand='+',featuretype='five_prime_UTR'),
+                    self.Feature(chrom='chr2L',start=8611,stop=9484,strand='+',featuretype='three_prime_UTR'),
+                   ]
+        print 'observed:',observed
+        print 'expected:',expected
+        assert observed == expected
+
+        observed = self.G.UTRs(self.G['FBtr0300690'])
+        expected = [
+                    self.Feature(chrom='chr2L',start=7529,stop=7679,strand='+',featuretype='five_prime_UTR'),
+                    self.Feature(chrom='chr2L',start=9277,stop=9484,strand='+',featuretype='three_prime_UTR'),
+                   ]
+        print 'observed:',observed
+        print 'expected:',expected
+        assert observed == expected
 
 class TestGenomeWithGFFDB(object):
     def setup(self):

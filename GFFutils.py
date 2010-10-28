@@ -2292,3 +2292,57 @@ class GFFDB:
 class GTFDB(GFFDB):
     featureclass = GTFFeature
     add_id = 'id,'
+    
+    def __init__(self, db_fn):
+        GFFDB.__init__(self,db_fn)
+
+    def UTRs(self, transcript_id):
+        """
+        Returns 5' and 3' UTRs for a transcript
+        """
+        transcript = self[transcript_id]
+        
+        exons = list(self.children(transcript_id, level=1, featuretype='exon'))
+        exons.sort(key=lambda x: x.start)
+        cdss = list(self.children(transcript_id, level=1, featuretype='CDS'))
+        cdss.sort(key=lambda x: x.start)
+
+        UTRs = []
+        if transcript.strand == '+':
+            first_cds = cdss[0]
+            last_cds = cdss[-1]
+            for exon in exons:
+                # this can happen with spliced UTRs:
+                if exon.stop < first_cds.start:
+                    UTR = self.__class__.featureclass(chrom=exon.chrom,
+                                                      start=exon.start,
+                                                      stop=exon.stop,
+                                                      strand=exon.strand,
+                                                      featuretype='five_prime_UTR')
+                    UTRs.append(UTR)
+                
+                # here's the canonical case, where a CDS is a subset of an exon.
+                if exon.start < first_cds.start < exon.stop:
+                    UTR = self.__class__.featureclass(chrom=exon.chrom,
+                                                      start=exon.start,
+                                                      stop=first_cds.start-1,
+                                                      strand=exon.strand,
+                                                      featuretype='five_prime_UTR')
+                    UTRs.append(UTR)
+
+                if exon.start < last_cds.stop < exon.stop:
+                    UTR = self.__class__.featureclass(chrom=exon.chrom,
+                                                      start=last_cds.stop+1,
+                                                      stop=exon.stop,
+                                                      strand=exon.strand,
+                                                      featuretype='three_prime_UTR')
+                    UTRs.append(UTR)
+        
+                if exon.stop > last_cds.stop:
+                    UTR = self.__class__.featureclass(chrom=exon.chrom,
+                                                      start=exon.start,
+                                                      stop=exon.stop,
+                                                      strand=exon.strand,
+                                                      featuretype='three_prime_UTR')
+
+        return UTRs
