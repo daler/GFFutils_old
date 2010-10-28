@@ -229,7 +229,29 @@ class GFFFeature(object):
 
     def __len__(self):
         return self.stop-self.start
-   
+    
+    def __eq__(self,other):
+        """
+        Test equality of two features based on their tostring() method, which 
+        is the most uniform representation of a feature.
+        """
+        if not isinstance(other,self.__class__):
+            raise ValueError, "cannot test equality to another object that's not the same class"
+        if (self.chrom == other.chrom) &\
+           (self.start == other.start) &\
+           (self.stop == other.stop) &\
+           (self.strand == other.strand) &\
+           (self._strattributes == other._strattributes) &\
+           (self.value == other.value) &\
+           (self.id == other.id):
+           return True
+        else:
+            return False
+
+    def __ne__(self,other):
+        return not self.__eq__(other)
+
+
     @property
     def TSS(self):
         """
@@ -398,11 +420,14 @@ class GTFFeature(GFFFeature):
                             phase,
                             attributes,
                             strvals)
-        self._strattributes = ''
+        if attributes is None:
+            self._strattributes = ''
+        else:
+            self._strattributes = attributes
         if id is not None:
             self.add_attribute('ID', id)
     
-    def tostring(self):
+    def tostring(self,gtfdb=None,include_id=True):
         """
         Prints the GTF record suitable for writing to file (newline
         included).
@@ -411,30 +436,65 @@ class GTFFeature(GFFFeature):
 
         AB000123    Twinscan     CDS    193817    194022    .    -    2    gene_id "AB000123.1"; transcript_id "AB00123.1.2"; 
         """
-        # Genes and transcripts are not explicitly written in GTF files.
-        if self.featuretype == 'gene':
-            return ''
-        if self.featuretype == 'mRNA':
-            return ''
-        
+        # 
+
+        # Genes and transcripts are not explicitly written in GTF files.  So if gene or mRNA featuretype is asked for, you need to 
+        # traverse the db and get the childrend for these objects.
+        # 
+        # Note that GTF files do not have multiple attribute values like GFF
+        # files, so this means you'll have to output a line for each feature
+        if self.featuretype == 'gene' or self.featuretype == 'mRNA':
+            if gtfdb is None:
+                raise ValueError, "Need to specify a GFFutils.GTFDB if you want to get all the GTF lines for this gene"
+
+            if self.featuretype == 'gene':
+                children = []
+                for transcript in gtfdb.children(self,level=1):
+                    for child in gtfdb.children(transcript,level=1):
+                        child.remove_attribute('transcript_id')
+                        child.add_attribute('transcript_id',transcript.id)
+                        children.append(child)
+            
+            if self.featuretype == 'mRNA':
+                children = []
+                for child in gtfdb.children(self,level=1):
+                    child.remove_attribute('transcript_id')
+                    child.add_attribute('transcript_id',self.id)
+                    children.append(child)
+
+
+            lines = []
+            children.sort(key=lambda x: (x.start,x.stop,x.featuretype))
+            for child in children:
+                if not include_id:
+                    child.remove_attribute('ID')
+                lines.append(child.tostring())
+            return ''.join(lines)
+                
+         
         # Reconstruct the attributes field
+        if not include_id:
+            feature = copy.deepcopy(self)
+        else:
+            feature = self
+
         attributes = ''
-        for attr in self.attributes._attrs:
-            values = getattr(self.attributes, attr)
+        for attr in feature.attributes._attrs:
+            values = getattr(feature.attributes, attr)
             if type(values) is list:
                 values = ','.join(map(str, values))
             attributes += attr+' '+'"' + str(values)+'"; '
 
-        items = [self.chrom, 
-                 self.source,
-                 self.featuretype,
-                 self.start, 
-                 self.stop, 
-                 self.value, 
-                 self.strand, 
-                 self.phase,
+        items = [feature.chrom, 
+                 feature.source,
+                 feature.featuretype,
+                 feature.start, 
+                 feature.stop, 
+                 feature.value, 
+                 feature.strand, 
+                 feature.phase,
                  attributes]
-
+        
         printables = []
         for item in items:
             if item is None:
@@ -831,7 +891,7 @@ def clean_gff(gfffn,newfn=None,addchr=False,featuretypes_to_remove=None,sanity_c
     
     fout.close()
 
-def create_gffdb(gfffn, dbfn):
+def create_gffdb(gfffn, dbfn, verbose=True):
     """
     Reads in a GFF3 file (with autodetection and support for *.gz files, based
     on extension) and constructs a database for use with downstream analysis.
@@ -947,8 +1007,9 @@ CREATE INDEX stopstrand on features(stop,strand);
         counter += 1
         perc_done = int(counter/nlines*100)
         if perc_done != last_perc:
-            print '\rpopulating database with features and first-order parents: %s%%'%perc_done,
-            sys.stdout.flush()
+            if verbose:
+                print '\rpopulating database with features and first-order parents: %s%%'%perc_done,
+                sys.stdout.flush()
         last_perc = perc_done
 
         # If no ID, then assign one.
@@ -984,24 +1045,30 @@ CREATE INDEX stopstrand on features(stop,strand);
     
     # show how much time it took
     t1 = time.time()
-    print '(%ds)' % (t1-t0)
+    if verbose:
+        print '(%ds)' % (t1-t0)
     t0 = time.time()
 
     # Index the database to speed up the second-level queries.
-    print 'creating indexes: 0%',
-    sys.stdout.flush()
+    if verbose:
+        print 'creating indexes: 0%',
+        sys.stdout.flush()
     c.execute('CREATE INDEX ids ON features (id)')
-    print '\rcreating indexes: 33%',
-    sys.stdout.flush()
+    if verbose:
+        print '\rcreating indexes: 33%',
+        sys.stdout.flush()
     c.execute('create index parentindex on relations (parent)')
-    print '\rcreating indexes: 66%',
-    sys.stdout.flush()
+    if verbose:
+        print '\rcreating indexes: 66%',
+        sys.stdout.flush()
     c.execute('create index childindex on relations (child)')
-    print '\rcreating indexes: 100%',
-    sys.stdout.flush()
+    if verbose:
+        print '\rcreating indexes: 100%',
+        sys.stdout.flush()
     conn.commit()
     t1 = time.time()
-    print '(%ds)' % (t1-t0)
+    if verbose:
+        print '(%ds)' % (t1-t0)
 
     # OK, now go through everything again to find the second-order children
     t0 = time.time()
@@ -1022,8 +1089,9 @@ CREATE INDEX stopstrand on features(stop,strand);
         counter += 1
         perc_done = int(counter / nlines * 100)
         if perc_done != last_perc:
-            print '\rquerying database for grandchildren: %s%%'%perc_done,
-            sys.stdout.flush()
+            if verbose:
+                print '\rquerying database for grandchildren: %s%%'%perc_done,
+                sys.stdout.flush()
         last_perc = perc_done    
 
         # Here we get the first-level child from the initial import.   This
@@ -1038,7 +1106,8 @@ CREATE INDEX stopstrand on features(stop,strand);
                 fout.write('%s\t%s\n' % (parent,grandchild))
     fout.close()
     t1 = time.time()
-    print '(%ds)' % (t1-t0)
+    if verbose:
+        print '(%ds)' % (t1-t0)
 
     t0 = time.time()
     counter = 0
@@ -1048,36 +1117,42 @@ CREATE INDEX stopstrand on features(stop,strand);
         counter += 1
         perc_done = int(counter / grandchild_count * 100)
         if perc_done != last_perc:
-            print '\rimporting grandchildren: %s%%' % perc_done,
-            sys.stdout.flush()
+            if verbose:
+                print '\rimporting grandchildren: %s%%' % perc_done,
+                sys.stdout.flush()
         last_perc = perc_done
         parent,child = line.strip().split('\t')
         c.execute('insert or ignore into relations values (?,?,?)', (parent, child, 2))
     t1 = time.time()
-    print '(%ds)' % (t1-t0)
+    if verbose:
+        print '(%ds)' % (t1-t0)
     t0 = time.time()
-    print 're-creating indexes',
+    if verbose:
+        print 're-creating indexes',
     c.execute('drop index childindex')
     c.execute('drop index parentindex')
     c.execute('create index parentindex on relations (parent)')
-    print '\rre-creating indexes: 50%',
-    sys.stdout.flush()
+    if verbose:
+        print '\rre-creating indexes: 50%',
+        sys.stdout.flush()
     c.execute('create index childindex on relations (child)')
     c.execute('create index starts on features(start)')
     c.execute('create index stops on features(stop)')
     c.execute('create index startstrand on features(start, strand)')
     c.execute('create index stopstrand on features(stop,strand)')
     c.execute('create index featuretypes on features(featuretype)')
-    print '\rre-creating indexes: 100%',
-    sys.stdout.flush()
+    if verbose:
+        print '\rre-creating indexes: 100%',
+        sys.stdout.flush()
     conn.commit()
     t1 = time.time()
-    print '(%ds)' % (t1-t0)
+    if verbose:
+        print '(%ds)' % (t1-t0)
 
     os.remove(tmp)
         
 
-def create_gtfdb(gtffn, dbfn):
+def create_gtfdb(gtffn, dbfn, verbose=True):
     """
     Reads in a GTF file and constructs a database for use with downstream
     analysis.  The GTFDB class will work as an interface to this database. 
@@ -1138,13 +1213,14 @@ def create_gtfdb(gtffn, dbfn):
         counter += 1
         perc_done = int(counter/nlines*100)
         if perc_done != last_perc:
-            print '\rpopulating database with features and first-order parents: %s%%'%perc_done,
-            sys.stdout.flush()
+            if verbose:
+                print '\rpopulating database with features and first-order parents: %s%%'%perc_done,
+                sys.stdout.flush()
         last_perc = perc_done
 
         parent = feature.attributes.transcript_id
         grandparent = feature.attributes.gene_id
-        
+         
         # Initialize counts to 1 and get the feature number which will become
         # the feature ID for the database.
         #
@@ -1159,7 +1235,7 @@ def create_gtfdb(gtffn, dbfn):
         # well, we don't want something that permanent . . . so just stick with
         # this just-for-the-database "ID" instead of
         # "feature.add_attribute('ID',ID)"
-        ID = '%s:%s:%s-%s' % (feature.featuretype, parent, feature.start, feature.stop)
+        ID = '%s:%s:%s-%s' % (feature.featuretype, feature.chrom, feature.start, feature.stop)
         
 
         # If it's an exon, its attributes include its parent transcript
@@ -1200,29 +1276,35 @@ def create_gtfdb(gtffn, dbfn):
                    feature._strattributes))
     conn.commit()
     t1 = time.time()
-    print '(%ds)' % (t1-t0)
+    if verbose:
+        print '(%ds)' % (t1-t0)
 
     # Now that the entries in the GTF file have been added, we can index
     # the database to speed up the second-level queries we need to do to
     # identify genes.
     t0 = time.time()
-    print 'creating indexes: 0%',
-    sys.stdout.flush()
+    if verbose:
+        print 'creating indexes: 0%',
+        sys.stdout.flush()
     c.execute('DROP INDEX IF EXISTS ids')
     c.execute('CREATE INDEX ids ON features (id)')
-    print '\rcreating indexes: 33%',
-    sys.stdout.flush()
+    if verbose:
+        print '\rcreating indexes: 33%',
+        sys.stdout.flush()
     c.execute('DROP INDEX IF EXISTS parentindex')
     c.execute('create index parentindex on relations (parent)')
-    print '\rcreating indexes: 66%',
-    sys.stdout.flush()
+    if verbose:
+        print '\rcreating indexes: 66%',
+        sys.stdout.flush()
     c.execute('drop index if exists childindex')
     c.execute('CREATE INDEX childindex ON relations (child)')
-    print '\rcreating indexes: 100%',
-    sys.stdout.flush()
+    if verbose:
+        print '\rcreating indexes: 100%',
+        sys.stdout.flush()
     conn.commit()
     t1 = time.time()
-    print '(%ds)' % (t1-t0)
+    if verbose:
+        print '(%ds)' % (t1-t0)
 
     
     # GTF files only describe exons, so genes and transcripts are described
@@ -1234,7 +1316,8 @@ def create_gtfdb(gtffn, dbfn):
     c.execute("SELECT COUNT(DISTINCT parent) FROM relations")
     nparents = float(c.fetchone()[0])
     
-    # These results will include transcripts and genes.
+    # These results will include only transcripts and genes, since exons and
+    # CDSs aren't parents of anything and so are not in this table as parents
     c.execute("""
               SELECT DISTINCT parent FROM relations
               """)
@@ -1247,8 +1330,9 @@ def create_gtfdb(gtffn, dbfn):
         counter += 1
         perc_done = int(counter/nparents*100)
         if perc_done != last_perc:
-            print '\rquerying database for start/stop positions of genes and transcripts: %s%%'%perc_done,
-            sys.stdout.flush()
+            if verbose:
+                print '\rquerying database for start/stop positions of genes and transcripts: %s%%'%perc_done,
+                sys.stdout.flush()
         last_perc = perc_done
 
         # Find the start and stop limits of this parent's children
@@ -1264,7 +1348,8 @@ def create_gtfdb(gtffn, dbfn):
                    JOIN relations ON
                    features.ID = relations.child
                    WHERE
-                   parent = ?
+                   parent = ? 
+                   AND featuretype == "exon"
                    """, (parent,))
         
         # For testing to make sure you only get one level back.
@@ -1274,6 +1359,8 @@ def create_gtfdb(gtffn, dbfn):
 
         child_limits = c2.fetchone()
         start,end,level,strand, chrom = child_limits
+        
+        #print parent, start, end, level
 
         # The strategy here is to write parents to file, and later read the
         # file back into the database so that we don't keep writing to the
@@ -1334,23 +1421,25 @@ def create_gtfdb(gtffn, dbfn):
 
     # show how much time it took
     t1 = time.time()
-    print '(%ds)' % (t1-t0)
+    if verbose:
+        print '(%ds)' % (t1-t0)
 
     # Re-create indexes since we just added all those parents. Prob only
     # need to re-create the first one though.
     t0 = time.time()
-    print 're-creating indexes: 0%',
-    sys.stdout.flush()
+    if verbose:
+        print 're-creating indexes: 0%',
+        sys.stdout.flush()
     c.execute('DROP INDEX ids')
     c.execute('CREATE INDEX ids ON features (id)')
-    print '\rre-creating indexes: 33%',
-    sys.stdout.flush()
+    if verbose:
+        print '\rre-creating indexes: 33%',
+        sys.stdout.flush()
     conn.commit()
     t1 = time.time()
-    print '(%ds)' % (t1-t0)
-
+    if verbose:
+        print '(%ds)' % (t1-t0)
     conn.commit()
-        
     del feature_counts
 
 class GFFDB:
@@ -1688,6 +1777,7 @@ class GFFDB:
         # featuretype 'merged_exon_CDS'.
         featuretypes = list(set([i.featuretype for i in features]))
         featuretypes.sort()
+        featuretypes = map(str,featuretypes)
         featuretypes = '_'.join(featuretypes)
         featuretype = 'merged_%s' % featuretypes
 
@@ -1840,7 +1930,7 @@ class GFFDB:
             featuretype_clause = ' AND features.featuretype = "%s"' % featuretype
 
         cursor.execute('''
-        SELECT DISTINCT
+        SELECT DISTINCT 
         %s chrom, source, featuretype, start, stop, value, strand, phase, attributes 
         FROM features JOIN relations 
         ON relations.child = features.id
@@ -1908,45 +1998,49 @@ class GFFDB:
         """
         
         geneID = gene.id
-        txStart = gene.start
-        txEnd = gene.stop
-        exons = []
-        cdss = []
-        exon_count = 0
-        for i in self.children(geneID,2):
-            if i.featuretype == 'CDS':
-                cdss.append(i)
-            if i.featuretype == 'exon':
-                exons.append(i)
-        
-        if len(cdss) == 0:
-            cdsStart = 'NA'
-            cdsEnd = 'NA'
-        else:
-            cdsStart = min([i.start for i in cdss])
-            cdsEnd = max([i.stop for i in cdss])
+        for transcript in self.children(geneID,level=1,featuretype='mRNA'):
+            
+            txStart = transcript.start
+            txEnd = transcript.stop
+            exons = []
+            cdss = []
+            exon_count = 0
+            for i in self.children(transcript,1):
+                if i.featuretype == 'CDS':
+                    cdss.append(i)
+                if i.featuretype == 'exon':
+                    exons.append(i)
+            
+            if len(cdss) == 0:
+                cdsStart = 'NA'
+                cdsEnd = 'NA'
+            else:
+                cdsStart = min([i.start for i in cdss])
+                cdsEnd = max([i.stop for i in cdss])
 
-        def exon_sort(e):
-            return e.start
+            def exon_sort(e):
+                return e.start
 
-        exons.sort(key=exon_sort)
+            exons.sort(key=exon_sort)
 
-
-        exonStarts = ','.join([str(i.start) for i in exons])
-        exonEnds = ','.join([str(i.stop) for i in exons])
-
-        line = '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' % (gene.attributes.Name[0], 
-                                                                 gene.id,
-                                                                 gene.chrom, 
-                                                                 gene.strand, 
-                                                                 gene.start, 
-                                                                 gene.stop,
-                                                                 cdsStart,
-                                                                 cdsEnd,
-                                                                 len(exons),
-                                                                 exonStarts,
-                                                                 exonEnds)
-        return line
+            exonStarts = ','.join([str(i.start) for i in exons])+','
+            exonEnds = ','.join([str(i.stop) for i in exons])+','
+            try:
+                name = transcript.attributes.Name[0]
+            except AttributeError:
+                name = transcript.id
+            line = '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' % (name, 
+                                                                     gene.id,
+                                                                     gene.chrom, 
+                                                                     gene.strand, 
+                                                                     gene.start, 
+                                                                     gene.stop,
+                                                                     cdsStart,
+                                                                     cdsEnd,
+                                                                     len(exons),
+                                                                     exonStarts,
+                                                                     exonEnds)
+            yield line
 
     def count_features_of_type(self,featuretype):
         """
@@ -1995,7 +2089,7 @@ class GFFDB:
         checking the upper boundary is the responsibility of the calling
         function.
         """
-        if isinstance(id, self.__class__.featureclass):
+        if not isinstance(id, self.__class__.featureclass):
             feature = self[id]
         else:
             feature = id
@@ -2043,8 +2137,8 @@ class GFFDB:
 
         if feature.strand == '+':
             TSS = feature.start
-            upstream = TSS - dist
-            downstream = TSS + dist
+            upstream = TSS - dist 
+            downstream = TSS + dist 
 
         if feature.strand == '-':
             TSS = feature.stop
@@ -2067,10 +2161,6 @@ class GFFDB:
 
         coords.sort()
         start,stop = coords
-
-        # shrink by one on each side so there's no overlap
-        start = start + 1
-        stop = stop -1 
 
         # Create a new GFFFeature object (or GTFFeature) to return
         if self.__class__.featureclass == GTFFeature:
@@ -2135,9 +2225,12 @@ class GFFDB:
         FlyBase GFFs)
         """
         for g in self.features_of_type('gene'):
+            coding = False
             for grandchild in self.children(g.id, level=2):
                 if grandchild.featuretype == 'CDS':
-                    yield g
+                    coding = True
+            if coding:
+                yield g
     
     def n_gene_isoforms(self, geneID):
         """
@@ -2199,60 +2292,3 @@ class GFFDB:
 class GTFDB(GFFDB):
     featureclass = GTFFeature
     add_id = 'id,'
-
-    def three_prime_UTR(self,id):
-        """
-        Returns the 3' UTR of a transcript (if *id*.featuretype == 'mRNA')
-        or of all children transcripts (if *id*.featuretype == 'gene').
-
-        Calculates the 3'UTR by doing coordinate differences between child
-        exon and CDS features.
-        """
-
-        feature = self[id]
-        if feature.featuretype == 'gene':
-            children = self.children(id,level=2)
-        if feature.featuretype == 'mRNA':
-            children = self.children(id,level=1)
-        elif feature.featuretype not in ['gene','mRNA']:
-            raise NotImplementedError, "3' UTR not implemented for features of type %s" % feature.featuretype
-
-        CDSs = []
-        exons = []
-        for child in children:
-            if child.featuretype == 'CDS':
-                CDSs.append(child)
-            elif child.featuretype == 'exon':
-                exons.append(child)
-        
-        # Now we have sorted features.
-        UTRs = []
-        for exon in exons:
-            for CDS in CDSs:
-                if exon.start <= CDS.start <= exon.stop:
-                    if (exon.start == CDS.start) and (exon.stop == CDS.stop):
-                        # exactly matches up, so not a UTR.
-                        continue
-                    else:
-                        # partial overlap, so have to get the limits.
-                        if exon.stop == CDS.stop:
-                            UTRstart = exon.start
-                            UTRstop = CDS.stop
-                        elif exon.start == CDS.start:
-                            UTRstart = CDS.stop
-                            UTRstop = exon.stop
-                else:
-                    # If no overlap at all with a CDS, then the whole thing
-                    # is a UTR.
-                    UTRstart = exon.start
-                    UTRstop = exon.stop
-                
-                UTR = copy.deepcopy(exon)
-                UTR.id = UTR.id.replace('exon','UTR')
-                UTR.start = UTRstart
-                UTR.stop = UTRstop
-                UTR.featuretype = 'UTR'
-                UTRs.append(UTR)
-        for i in UTRs:
-            yield i
-
