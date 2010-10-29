@@ -41,7 +41,7 @@ class GFFFeature(object):
                               # object.
 
     def __init__(self, chrom=None, source=None, featuretype=None, start=None, stop=None,
-                 value=None,strand=None,phase=None,attributes=None,strvals=False):
+                 value=None, strand=None, phase=None, attributes=None, name=None, strvals=False):
         """
         Represents a line in a GFF file.
 
@@ -67,8 +67,14 @@ class GFFFeature(object):
                          strings. 
         
                          Setting *strvals=True* will speed up parsing.
-        """
 
+        *name*        : If provided, replaces the "chrom" kwarg.  Useful if
+                        your GFF files are not "chromosome-centric".
+        """
+        if name is not None:
+            if chrom is not None:
+                raise ValueError, "specifying both chrom and name not supported"
+            chrom = name
         if not strvals: # do typecasting
             self.chrom = chrom
             self.source = source
@@ -146,6 +152,11 @@ class GFFFeature(object):
     @property
     def chr(self):
         """Attribute *chr* now deprecated -- please use *chrom* instead"""
+        return self.chrom
+
+    @property
+    def name(self):
+        """Alias to chrom"""
         return self.chrom
 
     def add_attribute(self, attribute, value):
@@ -253,7 +264,6 @@ class GFFFeature(object):
 
     def __ne__(self,other):
         return not self.__eq__(other)
-
 
     @property
     def TSS(self):
@@ -390,7 +400,7 @@ class GFFFile(object):
             if line.startswith('#') or len(line) == 0:
                 continue
             L = line.rstrip().split('\t')
-            args = [None for i in range(9)]
+            args = [None for i in range(10)]
             args[:len(L)] = L
             args.append(self.strvals)
             if self.__class__.featureclass == GFFFeature:
@@ -411,18 +421,20 @@ class GTFFeature(GFFFeature):
     Class to represent a GTF feature and its annotations. Subclassed from GFFFeature.
     """
     def __init__(self, id=None, chrom=None, source=None, featuretype=None, start=None, stop=None,
-                 value=None, strand=None, phase=None, attributes=None, strvals=False):
+                 value=None, strand=None, phase=None, attributes=None, name=None, strvals=False):
+        
         GFFFeature.__init__(self,
-                            chrom,
-                            source,
-                            featuretype,
-                            start,
-                            stop,
-                            value,
-                            strand,
-                            phase,
-                            attributes,
-                            strvals)
+                            chrom=chrom,
+                            source=source,
+                            featuretype=featuretype,
+                            start=start,
+                            stop=stop,
+                            value=value,
+                            strand=strand,
+                            phase=phase,
+                            attributes=attributes,
+                            name=name,
+                            strvals=strvals)
         if attributes is None:
             self._strattributes = ''
         else:

@@ -62,12 +62,12 @@ you can use (*Drosophila melanogaster*; chromosome 2L only; 42 MB):
 
 ftp://ftp.flybase.net/genomes/Drosophila_melanogaster/dmel_r5.29_FB2010/gff/dmel-2L-r5.29.gff.gz
 
-If you're using a FlyBase GFF file, you might want to take a look at the script
-``GFF_cleaner.py`` in the scripts directory in order to filter out features
-that may not be of interest.  Assuming you have a cleaned-up GFF file, here's
-how to create a GFF database from either a Python script or a Python shell.  To
-do this you simply specify the path to the GFF file and the path to the new
-database you'd like to create::
+If you're using a FlyBase GFF file, you might want to take a look at the
+function ``GFFutils.clean_gff()`` in order to filter out features that may not
+be of interest.  Assuming you have a cleaned-up GFF file, here's how to create
+a GFF database from either a Python script or a Python shell.  To do this you
+simply specify the path to the GFF file and the path to the new database you'd
+like to create::
 
     >>> import GFFutils
     >>> GFFutils.create_gffdb('/data/annotations/dm3.gff', '/data/dm3.db')
@@ -298,7 +298,7 @@ accession in the attributes field of the original GFF file::
     'FBgn0031208'
 
 If there was no unique ID in the original GFF file, then the ID will be the
-feature type plus an integer (for example, "gene119").  
+feature type plus the genomic coords (for example, "gene:chr2L:125-1340").  
 
 ``GFFFeature`` objects have many other properties::
 
@@ -308,7 +308,7 @@ feature type plus an integer (for example, "gene119").
     >>> gene.stop
     9484
 
-    >>> gene.chr
+    >>> gene.chrom
     'chr2L'
     
     >>> gene.featuretype
@@ -317,6 +317,12 @@ feature type plus an integer (for example, "gene119").
     >>> gene.strand
     '+'
 
+.. note::
+   
+   "name" is an alias to the "chrom" attribute if you're not working with
+   features that can be mapped to a chromosome.  So in the code shown here, you
+   can use ``gene.name`` instead of ``gene.chrom`` if it makes more semantic
+   sense to do so for your application.
 
 You can get the length of a feature with::
 
@@ -367,7 +373,7 @@ Or the DBxref (database cross-reference) for the gene with::
 You now know enough to be able to generate a line for a BED-format file (note
 subtracting 1 from the start to convert to BED format's zero-based start)::
 
-    >>>line = '%s\t%s\t%s\t%s\t%s\t%s\n' % (gene.chr, 
+    >>>line = '%s\t%s\t%s\t%s\t%s\t%s\n' % (gene.chrom, 
     ...                                     gene.start-1, 
     ...                                     gene.stop, 
     ...                                     gene.id, 
@@ -499,6 +505,11 @@ In each case, assume the following setup::
     import GFFutils
     GFFutils.create_gffdb('dm3.gff','dm3.db')
     G = GFFutils.GFFDB('dm3.db')
+
+.. warning::
+
+   These need examples need to be converted to doctests for thorough testing .
+   . . email me if any of these don't work.
 
 Inspecting the database
 ~~~~~~~~~~~~~~~~~~~~~~~

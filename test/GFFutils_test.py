@@ -192,9 +192,11 @@ class GenericFeature(object):
                       strand=None,
                       phase=None,
                       attributes=None,
+                      name=None,
                       strvals=False)
         nt.assert_raises(TypeError,self.Feature,**kwargs)
-        
+       
+
         # But it's OK if they're None if strvals is True, since None -> 'None'
         kwargs = dict(chrom=None,
                       start=None,
@@ -203,6 +205,7 @@ class GenericFeature(object):
                       strand=None,
                       phase=None,
                       attributes=None,
+                      name=None,
                       strvals=True)
         feature = self.Feature(**kwargs)
        
@@ -214,10 +217,49 @@ class GenericFeature(object):
                       strand=None,
                       phase=None,
                       attributes=None,
+                      name=None,
                       strvals=True)
         feature = self.Feature(**kwargs)
         assert feature.chr == 'chr2L'
         assert feature.chrom == 'chr2L'
+        assert feature.name == 'chr2L'
+        
+        # Test "chrom" retrieval if you specify "name" kwarg
+        kwargs = dict(chrom=None,
+                      start=1,
+                      stop=10,
+                      value=None,
+                      strand=None,
+                      phase=None,
+                      attributes=None,
+                      name='chr2L',
+                      strvals=True)
+        feature = self.Feature(**kwargs)
+        assert feature.chr == 'chr2L'
+        assert feature.chrom == 'chr2L'
+        assert feature.name == 'chr2L'
+        
+        # specifying chrom and name should raise ValueError
+        kwargs = dict(chrom='chr2L',
+                      start=1,
+                      stop=10,
+                      value=None,
+                      strand=None,
+                      phase=None,
+                      attributes=None,
+                      name='chr2L',
+                      strvals=False)
+        nt.assert_raises(ValueError,self.Feature,**kwargs)
+
+        kwargs = dict(chrom='chr2L',
+                      start=1,
+                      stop=10,
+                      value=None,
+                      strand=None,
+                      phase=None,
+                      attributes=None,
+                      name=None,
+                      strvals=False)
 
         feature = self.Feature(**kwargs)
         assert len(feature.attributes._attrs)==0
@@ -1109,7 +1151,7 @@ class TestGFFDBClass(GenericDBClass):
 
 class TestGTFDBClass(GenericDBClass):
     featureclass = 'GTF'
-    def UTR_test(self):
+    def UTR_(self):
         
         observed = self.G.UTRs(self.G['FBtr0300689'])
         expected = [
