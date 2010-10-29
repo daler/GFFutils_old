@@ -1,5 +1,7 @@
 .*.swp
 .GFFutils.py.swp
 GFFutils.egg-info/
-GFFutils.pyc
-
+*.pyc
+testing.db
+.coverage
+.noseids
