@@ -13,6 +13,9 @@ import mmap
 import string
 import copy
 import gzip
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
 
 class FeatureNotFoundError(Exception):
     """
@@ -799,6 +802,268 @@ class Genome:
         return ''.join(seq)
             
 
+class DBCreator(object):
+    def __init__(self,dbfn):
+        self.dbfn = dbfn
+        self.Feature = self.__class__.featureclass
+        conn = sqlite3.connect(dbfn)
+        conn.text_factory = sqlite3.OptimizedUnicode
+        self.conn = conn
+
+    def drop_indexes(self):
+        c = self.conn.cursor()
+        c.execute('DROP INDEX IF EXISTS ids')
+        c.execute('DROP INDEX IF EXISTS parentindex')
+        c.execute('DROP INDEX IF EXISTS childindex')
+        self.conn.commit()
+    
+    def init_tables(self):
+        c = self.conn.cursor()
+        c.executescript('''
+        CREATE TABLE features (
+                                id text, 
+                                chrom text, 
+                                start int, 
+                                stop int, 
+                                strand text,
+                                featuretype text,
+                                value float, 
+                                source text,
+                                phase text,
+                                attributes text,
+                                primary key (id)
+                              );
+        CREATE TABLE relations (parent text, child text, level int, primary key(parent,child,level) );
+        ''')
+        self.conn.commit()
+
+    def create_from_file(self,fn):
+        if self.__class__.featureclass == GFFFeature:
+            features = GFFFile(fn,strvals=False)
+        if self.__class__.featureclass == GTFFeature:
+            features = GTFFile(fn,strvals=True)
+        self.init_tables()
+        self.populate_from_features(features)
+        self.update_relations()
+
+class GFFDBCreator(DBCreator):
+    featureclass = GFFFeature
+    def __init__(self,dbfn):
+        DBCreator.__init__(self,dbfn)
+
+    def populate_from_features(self,features):
+        c = self.conn.cursor()
+        self.drop_indexes()
+        for feature in features:
+            if feature.id is None:
+                new_id = '%s:%s:%s-%s' % (feature.featuretype, feature.chrom, feature.start, feature.stop)
+                feature.add_attribute('ID',new_id)
+            c.execute('''
+                      INSERT OR IGNORE INTO features VALUES (?,?,?,?,?,?,?,?,?,?)
+                      ''',(feature.id, 
+                       feature.chrom,
+                       feature.start, 
+                       feature.stop,
+                       feature.strand,
+                       feature.featuretype,
+                       feature.value,
+                       feature.source,
+                       feature.phase,
+                       feature._strattributes))
+            try:
+                parents = feature.attributes.Parent
+                child = feature.id
+            except AttributeError: 
+                continue
+
+            # add the first-level parent relation
+            for parent in parents:
+                c.execute('INSERT INTO relations VALUES (?,?,?)', (parent, child, 1))
+        self.conn.commit()
+
+    def update_relations(self):
+        c = self.conn.cursor()
+        c2 = self.conn.cursor()
+        c3 = self.conn.cursor()
+        c.execute('CREATE INDEX ids ON features (id)')
+        c.execute('CREATE INDEX parentindex ON relations (parent)')
+        c.execute('CREATE INDEX childindex ON relations (child)')
+        self.conn.commit()
+
+        c.execute('SELECT id FROM features')
+
+        # create 2 more cursors so you can iterate over one while querying on
+        # the other's iteration
+        tmp = tempfile.mktemp()
+        fout = open(tmp,'w')
+        for parent in c:
+            parent = parent[0] # first thing in the list is the ID
+            
+            # Here we get the first-level child from the initial import.   This
+            # data was contained in the "Parent=" attribute of each GFF feature.
+            c2.execute('SELECT child FROM relations WHERE parent = ? AND level=1', (parent,))
+            for child in c2:
+                child = child[0]
+                c3.execute('SELECT child FROM relations WHERE parent = ? AND level=1', (child,))
+                for grandchild in c3:
+                    grandchild = grandchild[0]
+                    fout.write('%s\t%s\n' % (parent,grandchild))
+        fout.close()
+
+        for line in open(tmp):
+            parent,child = line.strip().split('\t')
+            c.execute('INSERT OR IGNORE INTO relations VALUES (?,?,?)', (parent, child, 2))
+
+        c.execute('drop index childindex')
+        c.execute('drop index parentindex')
+        c.execute('create index parentindex on relations (parent)')
+        c.execute('create index childindex on relations (child)')
+        c.execute('create index starts on features(start)')
+        c.execute('create index stops on features(stop)')
+        c.execute('create index startstrand on features(start, strand)')
+        c.execute('create index stopstrand on features(stop,strand)')
+        c.execute('create index featuretypes on features(featuretype)')
+
+        self.conn.commit()
+        os.unlink(tmp)
+
+class GTFDBCreator(DBCreator):
+    featureclass = GTFFeature
+    def __init__(self,dbfn):
+        DBCreator.__init__(self,dbfn)
+    
+    def populate_from_features(self,features):
+        self.drop_indexes()
+        c = self.conn.cursor()
+        for feature in features:
+            parent = feature.attributes.transcript_id
+            grandparent = feature.attributes.gene_id
+            
+            # A database-specific ID to use
+            ID = '%s:%s:%s-%s' % (feature.featuretype, feature.chrom, feature.start, feature.stop) 
+
+            # If it's an exon, its attributes include its parent transcript
+            # and its 'grandparent' gene.  So we can insert these
+            # relationships into the relations table now.
+
+            # Note that the table schema has (parent,child) as a primary
+            # key, so the INSERT OR IGNORE won't add multiple entries for a
+            # single (parent,child) relationship
+
+            # The gene has a grandchild exon
+            c.execute('''
+            INSERT OR IGNORE INTO relations VALUES (?,?,?)
+            ''', (grandparent, ID, 2))
+
+            # The transcript has a child exon
+            c.execute('''
+            INSERT OR IGNORE INTO relations VALUES (?,?,?)
+            ''', (parent, ID, 1))
+
+            # The gene has a child transcript
+            c.execute('''
+            INSERT OR IGNORE INTO relations VALUES (?,?,?)
+            ''', (grandparent, parent, 1))
+
+            # Insert the feature into the features table.
+            c.execute('''
+                      INSERT OR IGNORE INTO features VALUES (?,?,?,?,?,?,?,?,?,?)
+                      ''',(ID, 
+                       feature.chrom,
+                       feature.start, 
+                       feature.stop,
+                       feature.strand,
+                       feature.featuretype,
+                       feature.value,
+                       feature.source,
+                       feature.phase,
+                       feature._strattributes))
+        self.conn.commit()
+    
+    def update_relations(self):
+        self.drop_indexes()
+        c = self.conn.cursor()
+        c2 = self.conn.cursor()
+        c.execute('CREATE INDEX ids ON features (id)')
+        c.execute('CREATE INDEX parentindex ON relations (parent)')
+        c.execute('CREATE INDEX childindex ON relations (child)')
+
+        tmp = tempfile.mktemp()
+        fout = open(tmp,'w')
+        c.execute("SELECT DISTINCT parent FROM relations")
+        for parent in c:
+            parent = parent[0]
+            c2.execute("""
+                       SELECT min(start), max(stop), level, strand, chrom FROM features 
+                       JOIN relations ON
+                       features.ID = relations.child
+                       WHERE
+                       parent = ? 
+                       AND featuretype == "exon"
+                       """, (parent,))
+            child_limits = c2.fetchone()
+            start,end,level,strand, chrom = child_limits
+
+            # The strategy here is to write parents to file, and later read the
+            # file back into the database so that we don't keep writing to the
+            # database while we're in the middle of consuming a query results
+            # iterator...
+
+            # Using some assumptions we can make some shortcuts to determine
+            # what featuretype this parent really is.  Since the features table
+            # only contains exons, and we're joining on the features table,
+            # only exon children or only grandchildren will be returned (this
+            # can be verified by the commented-out test code above).  If only
+            # grandchildren were returned (i.e., level=2) then the parent is a
+            # gene.
+
+            # In addition, we need to create a fake attributes string so that
+            # later, upon accessing the database, the GTFDB wrapper will know
+            # how to assign an ID.  This is sort of a hack in order to maintain
+            # cleaner class inheritance between GFFFeatures and GTFFeatures.
+
+            # Since the relations table only has transcript children in it, any parents
+            # at level 1 are mRNAs.  
+            #
+            # WARNING: this does NOT account for non-coding RNAs -- they will still
+            # be called "mRNA"
+
+            if level == 1:
+                featuretype = 'mRNA'
+                attributes = 'transcript_id "%s"; ' % parent
+
+            # On the other hand, level 2 parents means that the parent is a gene.
+            if level == 2:
+                featuretype = 'gene'
+                attributes = 'gene_id "%s"; ' % parent
+
+            if level is None:
+                print 'WARNING: got back nothing good from db for %s' % parent
+                featuretype='None'
+ 
+
+            fout.write('%s\t%s\t%s\t%s\t%s\t%s\t%s\n' % (parent,chrom,
+                                                         start,end,strand,
+                                                         featuretype,attributes))
+        fout.close()
+
+        # Now that the file has been created and we're done querying for the
+        # parents, slurp in the file and insert everything into the db.
+        fin = open(fout.name)
+        for line in fin:
+            c.execute("""
+                      INSERT OR IGNORE INTO features (id, chrom, start, stop,
+                      strand, featuretype, attributes) VALUES (?,?,?,?,?,?,?)
+                      """, line.strip().split('\t'))
+
+        self.conn.commit()
+        os.remove(tmp)
+        
+        c.execute('DROP INDEX ids')
+        c.execute('CREATE INDEX ids ON features (id)')
+        self.conn.commit()
+
+
 def fasta_seqs_to_oneline(infn, outfn):
     """
     Converts a typical FASTA file *infn*, with many lines per sequence, into
@@ -924,29 +1189,31 @@ def create_gffdb(gfffn, dbfn, verbose=True):
     The "features" table contains the fields of the GFF line -- chrom, start,
     stop, strand, featuretype, value, source, phase, attributes.  It also
     contains the "id" field, which is a unique ID for each feature.
+    
+    Schema of the database:
 
-    CREATE TABLE features (
-                            id text, 
-                            chrom text, 
-                            start int, 
-                            stop int, 
-                            strand text,
-                            featuretype text,
-                            value float, 
-                            source text,
-                            phase text,
-                            attributes text,
-                            primary key (id)
-                          );
-CREATE TABLE relations (parent text, child text, level int, primary key(parent,child,level) );
-CREATE INDEX childindex on relations (child);
-CREATE INDEX featuretypes on features(featuretype);
-CREATE INDEX ids ON features (id);
-CREATE INDEX parentindex on relations (parent);
-CREATE INDEX starts on features(start);
-CREATE INDEX startstrand on features(start, strand);
-CREATE INDEX stops on features(stop);
-CREATE INDEX stopstrand on features(stop,strand);
+        CREATE TABLE features (
+                                id text, 
+                                chrom text, 
+                                start int, 
+                                stop int, 
+                                strand text,
+                                featuretype text,
+                                value float, 
+                                source text,
+                                phase text,
+                                attributes text,
+                                primary key (id)
+                              );
+        CREATE TABLE relations (parent text, child text, level int, primary key(parent,child,level) );
+        CREATE INDEX childindex on relations (child);
+        CREATE INDEX featuretypes on features(featuretype);
+        CREATE INDEX ids ON features (id);
+        CREATE INDEX parentindex on relations (parent);
+        CREATE INDEX starts on features(start);
+        CREATE INDEX startstrand on features(start, strand);
+        CREATE INDEX stops on features(stop);
+        CREATE INDEX stopstrand on features(stop,strand);
     """
 
     # Calculate lines so you can display the percent complete
@@ -1148,7 +1415,6 @@ CREATE INDEX stopstrand on features(stop,strand);
     t1 = time.time()
     if verbose:
         print '(%ds)' % (t1-t0)
-
     os.remove(tmp)
         
 
@@ -2300,6 +2566,7 @@ class GTFDB(GFFDB):
         """
         Returns 5' and 3' UTRs for a transcript
         """
+        raise NotImplementedError, 'Still working on the tests for this method.'
         transcript = self[transcript_id]
         
         exons = list(self.children(transcript_id, level=1, featuretype='exon'))

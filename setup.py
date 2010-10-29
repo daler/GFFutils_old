@@ -5,7 +5,7 @@ setup(
         version='0.5',
         test_suite = 'test',
         py_modules = ['GFFutils'],
-        scripts=['scripts/GFF_cleaner.py'],
+        #scripts=['scripts/GFF_cleaner.py'],
         author='Ryan Dale',
         url='none',
         author_email='dalerr@niddk.nih.gov'

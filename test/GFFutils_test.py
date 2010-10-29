@@ -13,7 +13,7 @@ def EXPECTED_DATA():
     # list the children and their expected first-order parents for the GFF test file.
     GFF_parent_check_level_1 = {'FBtr0300690':['FBgn0031208'],
                                 'FBtr0300689':['FBgn0031208'],
-                                'unnamed_exon_1':['FBtr0300689','FBtr0300690'],
+                                'exon:chr2L:7529-8116':['FBtr0300689','FBtr0300690'],
                                 'five_prime_UTR_FBgn0031208:1_737':['FBtr0300689','FBtr0300690'],
                                 'CDS_FBgn0031208:1_737':['FBtr0300689','FBtr0300690'],
                                 'intron_FBgn0031208:1_FBgn0031208:2':['FBtr0300690'],
@@ -31,7 +31,7 @@ def EXPECTED_DATA():
 
     # and second-level . . . they should all be grandparents of the same gene.
     GFF_parent_check_level_2 = {
-                                'unnamed_exon_1':['FBgn0031208'],
+                                'exon:chr2L:7529-8116':['FBgn0031208'],
                                 'five_prime_UTR_FBgn0031208:1_737':['FBgn0031208'],
                                 'CDS_FBgn0031208:1_737':['FBgn0031208'],
                                 'intron_FBgn0031208:1_FBgn0031208:2':['FBgn0031208'],
@@ -443,10 +443,15 @@ class GenericDBClass(object):
         self.fn = 'FBgn0031208' + extension
         self.dbfn = testdbfn
         if self.featureclass == 'GFF':
-            GFFutils.create_gffdb(self.fn, self.dbfn, verbose=False)
+            #GFFutils.create_gffdb(self.fn, self.dbfn, verbose=False)
+            #self.G = GFFutils.GFFDB(self.dbfn)
+            creation_class = GFFutils.GFFDBCreator(self.dbfn)
+            creation_class.create_from_file(self.fn)
             self.G = GFFutils.GFFDB(self.dbfn)
         if self.featureclass == 'GTF':
-            GFFutils.create_gtfdb(self.fn, self.dbfn, verbose=False)
+            #GFFutils.create_gtfdb(self.fn, self.dbfn, verbose=False)
+            creation_class = GFFutils.GTFDBCreator(self.dbfn)
+            creation_class.create_from_file(self.fn)
             self.G = GFFutils.GTFDB(self.dbfn)
 
         self.conn = sqlite3.connect(self.dbfn)
@@ -801,13 +806,14 @@ chr2L	protein_coding	stop_codon	9277	9279	.	+	0	gene_id "FBgn0031208"; transcrip
                              'FBtr0300689',
                              'FBtr0300690',
                              'INC121G01_pcr_product',
+                             'exon:chr2L:7529-8116',
                              'five_prime_UTR_FBgn0031208:1_737', 
                              'intron_FBgn0031208:1_FBgn0031208:2',
                              'intron_FBgn0031208:1_FBgn0031208:3', 
                              'intron_FBgn0031208:2_FBgn0031208:4',
                              'three_prime_UTR_FBgn0031208:3_737',
                              'three_prime_UTR_FBgn0031208:4_737', 
-                             'unnamed_exon_1']
+                             ]
         if self.featureclass == 'GTF':
             expected_hardcoded = ['CDS:chr2L:7680-8116',
                                   'CDS:chr2L:8193-8610',
@@ -855,8 +861,9 @@ chr2L	protein_coding	stop_codon	9277	9279	.	+	0	gene_id "FBgn0031208"; transcrip
                         'FBpp0289914',
                         'FBtr0300689',
                         'FBtr0300690', 
+                        'exon:chr2L:7529-8116',
                         'five_prime_UTR_FBgn0031208:1_737', 
-                        'unnamed_exon_1']
+                        ]
         if self.featureclass == 'GTF':
             # things like the last exons and stop codons shouldn't be overlapping.
             expected = ['CDS:chr2L:7680-8116', 
@@ -877,7 +884,7 @@ chr2L	protein_coding	stop_codon	9277	9279	.	+	0	gene_id "FBgn0031208"; transcrip
         observed = sorted([i.id for i in self.G.overlapping_features(chrom='chr2L',start=7529,stop=8116, completely_within=True)])
         print 'observed:',observed
         if self.featureclass == 'GFF':
-            expected = ['CDS_FBgn0031208:1_737','five_prime_UTR_FBgn0031208:1_737', 'unnamed_exon_1']
+            expected = ['CDS_FBgn0031208:1_737','exon:chr2L:7529-8116','five_prime_UTR_FBgn0031208:1_737',]
         if self.featureclass == 'GTF':
             # multiple exons, multiple CDSs, multiple start_codons.  Still not
             # sure if this is the best way to do it, since it's not identical
@@ -1095,7 +1102,7 @@ FBtr0300690	FBgn0031208	chr2L	+	7529	9484	7680	9276	3	7529,8193,8668,	8116,8589,
     
     def teardown(self):
         pass
-        os.unlink(testdbfn)
+        #os.unlink(testdbfn)
 
 class TestGFFDBClass(GenericDBClass):
     featureclass = 'GFF'
@@ -1261,3 +1268,294 @@ class TestGenome(object):
         observed = self.genome.sequence_from_feature(gfffeature)
         assert observed == expected       
     
+
+def create_gtfdb(gtffn, dbfn, verbose=True):
+    """
+    Reads in a GTF file and constructs a database for use with downstream
+    analysis.  The GTFDB class will work as an interface to this database. 
+
+    Assume that for a CDS, the attribute gene_id specifies the "grandparent" gene
+    and the attribute transcript_id specifies the "parent" transcript.
+
+    This also implies that the gene_id is the parent of the transcript_id.
+
+    Thus, the relations table is filled out first.
+    """
+    # Not all GTF files contain "exon_number" attributes.  We need these in
+    # order to construct unique IDs for features. This dictionary will hold the
+    # current highest count for each featuretype and for each gene.
+    #
+    # So feature_counts will look something like:
+    #
+    #     feature_counts = {'exon':{'gene1':1,
+    #                               'gene2':8,},
+    #                       '5UTR':{'gene1':1,
+    #                               'gene2':1}
+    #                      }
+
+    feature_counts = {}
+
+
+    # Calculate lines so you can display the percent complete
+    f = open(gtffn)
+    nlines = 0.0
+    for line in f:
+        nlines += 1
+    f.close()
+
+    # Create tables and indexes.
+    conn = sqlite3.connect(dbfn)
+    c = conn.cursor()
+    c.executescript('''
+    CREATE TABLE features (
+                            id text primary key, 
+                            chrom text, 
+                            start int, 
+                            stop int, 
+                            strand text,
+                            featuretype text,
+                            value float, 
+                            source text,
+                            phase text,
+                            attributes text
+                          );
+    CREATE TABLE relations (parent text, child text, level int, primary key (parent, child));
+    ''')
+
+    # Parse the GTF file, populating the features tables and the relations table.
+    t0 = time.time()
+    counter = 0
+    last_perc = 0
+    for feature in GTFFile(gtffn,strvals=True):
+        counter += 1
+        perc_done = int(counter/nlines*100)
+        if perc_done != last_perc:
+            if verbose:
+                print '\rpopulating database with features and first-order parents: %s%%'%perc_done,
+                sys.stdout.flush()
+        last_perc = perc_done
+
+        parent = feature.attributes.transcript_id
+        grandparent = feature.attributes.gene_id
+         
+        # Initialize counts to 1 and get the feature number which will become
+        # the feature ID for the database.
+        #
+        # TODO: maybe this should be a uniquely-identifiable number (e.g.,
+        # gene-start-stop?, rather than an integer that is dependent on the
+        # location in the source file?
+        feature_counts.setdefault(feature.featuretype,{}).setdefault(grandparent,0)
+        feature_counts[feature.featuretype][grandparent] += 1
+        feature_number = feature_counts[feature.featuretype][grandparent]
+        
+        # Note: with the new add_attribute() method adding to the string as
+        # well, we don't want something that permanent . . . so just stick with
+        # this just-for-the-database "ID" instead of
+        # "feature.add_attribute('ID',ID)"
+        ID = '%s:%s:%s-%s' % (feature.featuretype, feature.chrom, feature.start, feature.stop)
+        
+
+        # If it's an exon, its attributes include its parent transcript
+        # and its 'grandparent' gene.  So we can insert these
+        # relationships into the relations table now.
+
+        # Note that the table schema has (parent,child) as a primary
+        # key, so the INSERT OR IGNORE won't add multiple entries for a
+        # single (parent,child) relationship
+
+        # The gene has a grandchild exon
+        c.execute('''
+        INSERT OR IGNORE INTO relations VALUES (?,?,?)
+        ''', (grandparent, ID, 2))
+
+        # The transcript has a child exon
+        c.execute('''
+        INSERT OR IGNORE INTO relations VALUES (?,?,?)
+        ''', (parent, ID, 1))
+
+        # The gene has a child transcript
+        c.execute('''
+        INSERT OR IGNORE INTO relations VALUES (?,?,?)
+        ''', (grandparent, parent, 1))
+
+        # Insert the feature into the features table.
+        c.execute('''
+                  INSERT OR IGNORE INTO features VALUES (?,?,?,?,?,?,?,?,?,?)
+                  ''',(ID, 
+                   feature.chrom,
+                   feature.start, 
+                   feature.stop,
+                   feature.strand,
+                   feature.featuretype,
+                   feature.value,
+                   feature.source,
+                   feature.phase,
+                   feature._strattributes))
+    conn.commit()
+    t1 = time.time()
+    if verbose:
+        print '(%ds)' % (t1-t0)
+
+    # Now that the entries in the GTF file have been added, we can index
+    # the database to speed up the second-level queries we need to do to
+    # identify genes.
+    t0 = time.time()
+    if verbose:
+        print 'creating indexes: 0%',
+        sys.stdout.flush()
+    c.execute('DROP INDEX IF EXISTS ids')
+    c.execute('CREATE INDEX ids ON features (id)')
+    if verbose:
+        print '\rcreating indexes: 33%',
+        sys.stdout.flush()
+    c.execute('DROP INDEX IF EXISTS parentindex')
+    c.execute('create index parentindex on relations (parent)')
+    if verbose:
+        print '\rcreating indexes: 66%',
+        sys.stdout.flush()
+    c.execute('drop index if exists childindex')
+    c.execute('CREATE INDEX childindex ON relations (child)')
+    if verbose:
+        print '\rcreating indexes: 100%',
+        sys.stdout.flush()
+    conn.commit()
+    t1 = time.time()
+    if verbose:
+        print '(%ds)' % (t1-t0)
+
+    
+    # GTF files only describe exons, so genes and transcripts are described
+    # implicitly.  With all the exons imported into the database, we can
+    # now do queries to find the limits of genes and transcripts . . . 
+
+    # Get an idea of how many parents we have to get through
+    t0 = time.time()
+    c.execute("SELECT COUNT(DISTINCT parent) FROM relations")
+    nparents = float(c.fetchone()[0])
+    
+    # These results will include only transcripts and genes, since exons and
+    # CDSs aren't parents of anything and so are not in this table as parents
+    c.execute("""
+              SELECT DISTINCT parent FROM relations
+              """)
+    tmp = tempfile.mktemp()
+    fout = open(tmp,'w')
+    counter = 0
+    c2 = conn.cursor()
+    for parent in c:
+        # Some feedback...
+        counter += 1
+        perc_done = int(counter/nparents*100)
+        if perc_done != last_perc:
+            if verbose:
+                print '\rquerying database for start/stop positions of genes and transcripts: %s%%'%perc_done,
+                sys.stdout.flush()
+        last_perc = perc_done
+
+        # Find the start and stop limits of this parent's children
+        parent = parent[0]
+
+        # parent may be None if there's something funky in the GTF file.
+        if parent is None:
+            continue
+
+
+        c2.execute("""
+                   select min(start), max(stop), level, strand, chrom FROM features 
+                   JOIN relations ON
+                   features.ID = relations.child
+                   WHERE
+                   parent = ? 
+                   AND featuretype == "exon"
+                   """, (parent,))
+        
+        # For testing to make sure you only get one level back.
+        #child_limits = c2.fetchall()
+        #assert len(child_limits) == 1
+        #child_limits = child_limits[0]
+
+        child_limits = c2.fetchone()
+        start,end,level,strand, chrom = child_limits
+        
+        #print parent, start, end, level
+
+        # The strategy here is to write parents to file, and later read the
+        # file back into the database so that we don't keep writing to the
+        # database while we're in the middle of consuming a query results
+        # iterator...
+
+        # Using some assumptions we can make some shortcuts to determine
+        # what featuretype this parent really is.  Since the features table
+        # only contains exons, and we're joining on the features table,
+        # only exon children or only grandchildren will be returned (this
+        # can be verified by the commented-out test code above).  If only
+        # grandchildren were returned (i.e., level=2) then the parent is a
+        # gene.
+
+        # In addition, we need to create a fake attributes string so that
+        # later, upon accessing the database, the GTFDB wrapper will know
+        # how to assign an ID.  This is sort of a hack in order to maintain
+        # cleaner class inheritance between GFFFeatures and GTFFeatures.
+
+        # Since the relations table only has transcript children in it, any parents
+        # at level 1 are mRNAs.  
+        #
+        # WARNING: this does NOT account for non-coding RNAs -- they will still
+        # be called "mRNA"
+        if level == 1:
+            featuretype = 'mRNA'
+            attributes = 'transcript_id "%s"; ' % parent
+
+        # On the other hand, level 2 parents means that the parent is a gene.
+        if level == 2:
+            featuretype = 'gene'
+            attributes = 'gene_id "%s"; ' % parent
+
+
+        if level is None:
+            print 'WARNING: got back nothing good from db for %s' % parent
+            featuretype='None'
+
+        fout.write('%s\t%s\t%s\t%s\t%s\t%s\t%s\n' % (parent,chrom,
+                                                     start,end,strand,
+                                                     featuretype,attributes))
+    fout.close()
+    
+
+    # Now that the file has been created and we're done querying for the
+    # parents, slurp in the file and insert everything into the db.
+    fin = open(fout.name)
+    for line in fin:
+        c.execute("""
+                  INSERT OR IGNORE INTO features (id, chrom, start, stop,
+                  strand, featuretype, attributes) VALUES (?,?,?,?,?,?,?)
+                  """, line.strip().split('\t'))
+
+    conn.commit()
+
+    # clean up the tempfile.
+    os.remove(tmp)
+
+    # show how much time it took
+    t1 = time.time()
+    if verbose:
+        print '(%ds)' % (t1-t0)
+
+    # Re-create indexes since we just added all those parents. Prob only
+    # need to re-create the first one though.
+    t0 = time.time()
+    if verbose:
+        print 're-creating indexes: 0%',
+        sys.stdout.flush()
+    c.execute('DROP INDEX ids')
+    c.execute('CREATE INDEX ids ON features (id)')
+    if verbose:
+        print '\rre-creating indexes: 33%',
+        sys.stdout.flush()
+    conn.commit()
+    t1 = time.time()
+    if verbose:
+        print '(%ds)' % (t1-t0)
+    conn.commit()
+    del feature_counts
+
