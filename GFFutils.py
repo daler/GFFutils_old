@@ -242,7 +242,10 @@ class GFFFeature(object):
                                               self.strand)
 
     def __len__(self):
-        return self.stop-self.start
+        length = self.stop-self.start+1
+        if length<1:
+            raise ValueError, 'Zero- or negative length feature'
+        return length
     
     def __eq__(self,other):
         """
@@ -2341,10 +2344,13 @@ class GFFDB:
         of the promoter guided by the kwargs described below.
         
         *dist* (default 1000) is the distance in bp from TSS that you want to
-        include.  TSS is considered the feature start position if the feature
-        is on the plus strand, or the feature stop position if on the minus
-        strand. The application of *dist* to getting a promoter can be changed
-        by the other kwargs below:
+        include.  The returned feature will have a legnth of *dist* + 1, since
+        the TSS will be included as well.
+        
+        TSS is considered the feature start position if the feature is on the
+        plus strand, or the feature stop position if on the minus strand. The
+        application of *dist* to getting a promoter can be changed by the other
+        kwargs below:
 
         If *bidirectional* is True (default), then include *dist* bp on BOTH
         sides of the TSS.  Otherwise, only include the region *dist* bp 5' of

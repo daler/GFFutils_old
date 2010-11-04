@@ -330,7 +330,7 @@ class GenericFeature(object):
                       attributes=None,
                       strvals=True)
         feature = self.Feature(**kwargs)
-        assert len(feature) == 29
+        assert len(feature) == 30
 
         # built-in len will complain if result is negative
         feature.start = 31
@@ -1049,7 +1049,9 @@ FBtr0300690	FBgn0031208	chr2L	+	7529	9484	7680	9276	3	7529,8193,8668,	8116,8589,
         print 'len(observed):',len(observed)
         print 'expected:'
         print expected
-        assert len(observed) == 2000
+
+        # 1000 upstream, 1000 downstream -- and the TSS itself.
+        assert len(observed) == 2001
         assert observed == expected
 
 
@@ -1063,7 +1065,7 @@ FBtr0300690	FBgn0031208	chr2L	+	7529	9484	7680	9276	3	7529,8193,8668,	8116,8589,
         print 'len(observed):',len(observed)
         print 'expected:'
         print expected
-        assert len(observed) == 100
+        assert len(observed) == 101
         assert observed == expected
 
         # Test truncation
@@ -1078,7 +1080,7 @@ FBtr0300690	FBgn0031208	chr2L	+	7529	9484	7680	9276	3	7529,8193,8668,	8116,8589,
             print 'len(observed):',len(observed)
             print 'expected:'
             print expected
-            assert len(observed) == 500
+            assert len(observed) == 501
             assert observed == expected
     
     def attribute_search_test(self):
@@ -1096,7 +1098,7 @@ FBtr0300690	FBgn0031208	chr2L	+	7529	9484	7680	9276	3	7529,8193,8668,	8116,8589,
 
     def exonic_bp_test(self):
         observed = self.G.exonic_bp('FBgn0031208')
-        expected = 1878
+        expected = 1880
         print 'observed:',observed
         print 'expected:',expected
         assert observed == expected
