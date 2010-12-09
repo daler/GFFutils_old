@@ -1986,9 +1986,15 @@ class GFFDB:
             featuretype_clause = ' AND featuretype = "%s"' % featuretype
 
         if completely_within:
-            within_clause = ' AND ((start BETWEEN %s AND %s) AND (stop BETWEEN %s AND %s))' % (start,stop, start,stop)
+            within_clause = ' AND ((start BETWEEN %(start)s AND %(stop)s) AND (stop BETWEEN %(start)s AND %(stop)s))' % locals()
         else:
-            within_clause = ' AND ((start BETWEEN %s AND %s) OR (stop BETWEEN %s AND %s))' % (start,stop, start,stop)
+            within_clause = ''' AND (
+                                        (start BETWEEN %(start)s AND %(stop)s) 
+                                        OR 
+                                        (stop BETWEEN %(start)s AND %(stop)s)
+                                        OR
+                                        (start < %(stop)s AND stop > %(start)s)
+                                     ) ''' % locals()
         c = self.conn.cursor()
         c.execute('''
         SELECT %s chrom,source,featuretype,start,stop,value,strand,phase,attributes
@@ -2264,6 +2270,100 @@ class GFFDB:
         for i in cursor:
             yield i
 
+    def to_GTF(self, gene, include_utrs=True):
+        """
+        Converts the gene into a series of GTF features that can be output to a
+        file (with feature.tostring()).
+
+        Optionally include UTRs in the output with *include_UTRs=True*
+        """
+        def by_start(x):
+            return x.start
+
+        for transcript in self.children(gene,level=1,featuretype='mRNA'):
+
+            gene_id = gene.id
+            transcript_id = transcript.id
+            attributes = 'gene_id "%s"; transcript_id "%s";' % (gene_id, transcript_id)
+            
+            exons = sorted(self.children(transcript, level=1, featuretype='exon'), key=by_start)
+            cdss = sorted(self.children(transcript, level=1, featuretype='CDS'), key=by_start)
+            
+            utrs = []
+            if include_utrs:
+
+                five_prime_utrs  = sorted(self.children(transcript, level=1, featuretype='five_prime_UTR'), key=by_start)
+                for five_prime_utr in five_prime_utrs:
+                    five_prime_utr.featuretype = '5UTR'
+                    utrs.append(five_prime_utr)
+
+                # 3' UTRs have stop codon positions removed from them
+                three_prime_utrs = sorted(self.children(transcript, level=1, featuretype='three_prime_UTR'), key=by_start)
+                for three_prime_utr in three_prime_utrs:
+                    three_prime_utr.featuretype = '3UTR'
+                    if three_prime_utr.strand == '-':
+                        three_prime_utr.stop -= 3
+                    if three_prime_utr.strand == '+':
+                        three_prime_utr.start += 3
+                    utrs.append(three_prime_utr)
+                
+            grandchildren = exons + cdss + utrs
+
+            for feature in grandchildren:
+                yield GTFFeature(chrom=feature.chrom,
+                                 start=feature.start,
+                                 stop=feature.stop,
+                                 featuretype=feature.featuretype,
+                                 value=feature.value,
+                                 phase=feature.phase,
+                                 strand=feature.strand,
+                                 source=feature.source,
+                                 attributes=attributes)
+
+            # Construct new features for start_codon and stop_codon.
+            # Contiguous start and stop codons always have phase=0, says the
+            # GTF 2.2 spec
+            if transcript.strand == '+':
+                # start codon
+                yield GTFFeature(chrom=transcript.chrom,
+                                 start=cdss[0].start,
+                                 stop=cdss[0].start+2,
+                                 strand=transcript.strand,
+                                 featuretype='start_codon',
+                                 source=transcript.source,
+                                 phase=0,
+                                 attributes=attributes)
+
+                # stop codon
+                yield GTFFeature(chrom=transcript.chrom,
+                                 start=cdss[-1].stop+1,
+                                 stop=cdss[-1].stop+3,
+                                 strand=transcript.strand,
+                                 featuretype='stop_codon',
+                                 source=transcript.source,
+                                 phase=0,
+                                 attributes=attributes)
+                
+            # Or, if we're on the other strand,
+            if transcript.strand == '-':
+                yield GTFFeature(chrom=transcript.chrom,
+                                 start=cdss[-1].stop,
+                                 stop=cdss[-1].stop-2,
+                                 strand=transcript.strand,
+                                 featuretype='start_codon',
+                                 source=transcript.source,
+                                 phase=0,
+                                 attributes=attributes)
+                yield GTFFeature(chrom=transcript.chrom,
+                                 start=cdss[0].start-1,
+                                 stop=cdss[0].start-3,
+                                 strand=transcript.strand,
+                                 featuretype='stop_codon',
+                                 source=transcript.source,
+                                 phase=0,
+                                 attributes=attributes)
+                                         
+
     def refFlat(self, gene):
         """Writes the gene out as a RefFlat format:
             
@@ -2424,11 +2524,13 @@ class GFFDB:
             upstream = TSS - dist 
             downstream = TSS + dist 
 
-        if feature.strand == '-':
+        elif feature.strand == '-':
             TSS = feature.stop
             upstream = TSS + dist
             downstream = TSS - dist
         
+        else:
+            raise ValueError, 'Feature strand is "%s" (%s) so promoter is ambiguous' % (feature.strand,feature)
         # Negative coords not allowed; truncate to beginning of chrom (note the
         # incrementing of start and decrementing of stop below, so this will
         # become 1 instead of 0)
