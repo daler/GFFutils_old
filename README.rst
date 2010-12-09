@@ -543,7 +543,7 @@ Average gene length
 BED file of genes
 ~~~~~~~~~~~~~~~~~
 An ``awk`` one-liner would be easier if all you needed were start/stop; adding
-the ID as the BED feature "name" is a little more annoying.  This example shows
+the ID as the BED feature "name" would be a little more annoying.  This example shows
 the automatic use the ID of the gene for the BED "name" field, making BED file
 creation pretty straightforward.
 
