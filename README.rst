@@ -539,6 +539,20 @@ Average gene length
         gene_count += 1
     mean_gene_length = float(gene_lengths) / gene_count
 
+
+BED file of genes
+~~~~~~~~~~~~~~~~~
+This will use the ID of the gene for the BED "name" field.
+
+::
+
+
+    fout = open('genes.bed','w')
+    for gene in G.features_of_type('gene'):
+        fout.write(gene.to_bed(6))
+    fout.close()
+
+
 Longest gene
 ~~~~~~~~~~~~
 ::
