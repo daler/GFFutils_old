@@ -2543,14 +2543,12 @@ class GFFDB:
         else:
             raise ValueError, 'Feature strand is "%s" (%s) so promoter is ambiguous' % (feature.strand,feature)
 
-        # Negative coords not allowed; truncate to beginning of chrom (note the
-        # incrementing of start and decrementing of stop below, so this will
-        # become 1 instead of 0)
-        if upstream < 0:
-            upstream = 0
+        # Negative coords not allowed; truncate to beginning of chrom
+        if upstream < 1:
+            upstream = 1
 
-        if downstream < 0:
-            downstream = 0
+        if downstream < 1:
+            downstream = 1
 
         if direction == 'both':
             coords = [upstream,downstream]
