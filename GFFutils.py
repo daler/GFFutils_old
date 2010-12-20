@@ -1864,7 +1864,7 @@ class GFFDB:
             total_exon_bp += len(exon)
         return total_exon_bp
 
-    def closest_feature(self,chrom,pos,strand=None,featuretype=None, ignore=None):
+    def closest_feature(self,chrom,pos,strand=None,featuretype=None, ignore=None, end=None):
         """
         Returns the closest feature and the distance to the start position of
         that feature from *pos*.  It's up the caller to determine things like
@@ -1890,27 +1890,35 @@ class GFFDB:
         Note that providing a *featuretype* and *strand* will speed things up
         considerably.
 
-        To illustrate, here is a somewhat contrived example usage to get
-        closest upstream TSS on the plus strand to the genomic position
-        "chr2L:5000000" (and stop looking if there's nothing within 1Mb)::
+        *end* refers to which end of features you want to look for; this can be
+        "start" or "stop" and its meaning depends on strand.  
+        
+        For example, the kwargs  {strand:"-", end:"stop", featuretype:"gene"}
+        will look for the closest minus-strand TSS; use {strand:"+",
+        end:"start", featuretype:"gene"} for plus-strand closest TSS.
 
-            >>> chrom = 'chr2L'
-            >>> pos = 5000000
-            >>> closest_pos = pos+1
-            >>> closest_feature = None
-            >>> strand = None
+        For upstream/downstream work, the idiom is to use a while loop,
+        ignoring consecutively close features that are close but in the wrong
+        direction.
+        
+        For example, to get the closest upstream TSS that's on the plus strand to chr3R:50000::
+
             >>> ignore = []
-            >>> while (closest_pos > pos) or (strand !='-'):
-            ...     dist,closest_feature = G.closest_feature(chrom=chrom,pos=pos,ignore=ignore,featuretype='gene')
-            ...     strand = closest_feature.strand
-            ...     ignore.append(closest_feature.id)
-            ...     closest_pos = closest_feature.TSS
-            ...     if dist > 1e6:
-            ...         closest_feature = None
-            ...         break
+            >>> while (closest_pos > pos):
+            ...     dist,closest_plus_feature = G.closest_feature(chrom='chr3R', pos=50000, strand="+", end="start", ignore=ignore, featuretype='gene')
+            ...     closest_pos = closest_plus_feature.TSS
+            ...     ignore.append(closest_plus_feature.id) 
+    
+        And here's the closest upstream TSS on the minus strand::
 
+            >>> ignore = []
+            >>> while (closest_pos > pos):
+            ...     dist,closest_plus_feature = G.closest_feature(chrom='chr3R', pos=50000, strand="-", end="end", ignore=ignore, featuretype='gene')
+            ...     closest_pos = closest_plus_feature.TSS
+            ...     ignore.append(closest_plus_feature.id) 
 
         """
+
         # e.g., AND id != FBgn0001 AND id != FBgn0002
         ignore_clause = ''
         if ignore is not None:
@@ -1929,29 +1937,34 @@ class GFFDB:
         
         c = self.conn.cursor()
         
-        c.execute('''
-        SELECT abs(%(pos)s-start) as AAA,id FROM features 
-        WHERE
-        chrom = ?
-        %(ignore_clause)s
-        %(strand_clause)s
-        %(featuretype_clause)s
-        ORDER BY AAA LIMIT 1
-        ''' % locals(),(chrom,))
-        closest_start = c.fetchone()
-        
-        c.execute('''
-        SELECT abs(%(pos)s-stop) as AAA,id FROM features 
-        WHERE
-        chrom = ?
-        %(ignore_clause)s
-        %(strand_clause)s
-        %(featuretype_clause)s
-        ORDER BY AAA LIMIT 1
-        ''' % locals(),(chrom,))
-        closest_stop = c.fetchone()
+        candidates = []
+        if end is None:
+            end = ['start', 'stop']
 
-        candidates = [closest_start,closest_stop]
+        if 'start' in end:
+            c.execute('''
+            SELECT abs(%(pos)s-start) as AAA,id FROM features 
+            WHERE
+            chrom = ?
+            %(ignore_clause)s
+            %(strand_clause)s
+            %(featuretype_clause)s
+            ORDER BY AAA LIMIT 1
+            ''' % locals(),(chrom,))
+            candidates.append(c.fetchone())
+        
+        if 'stop' in end:
+            c.execute('''
+            SELECT abs(%(pos)s-stop) as AAA,id FROM features 
+            WHERE
+            chrom = ?
+            %(ignore_clause)s
+            %(strand_clause)s
+            %(featuretype_clause)s
+            ORDER BY AAA LIMIT 1
+            ''' % locals(),(chrom,))
+            candidates.append(c.fetchone())
+
         candidates = [i for i in candidates if i is not None] 
         if len(candidates) == 0:
             return None,None
@@ -2438,7 +2451,7 @@ class GFFDB:
             results = results[0]
         return results
     
-    def promoter(self, id, dist=1000, truncate_at_next_feature=None, bidirectional=True):
+    def promoter(self, id, dist=1000, truncate_at_next_feature=None, direction='upstream'):
         """
         Returns a new GFFFeature of featuretype "promoter", with the definition
         of the promoter guided by the kwargs described below.
@@ -2452,10 +2465,8 @@ class GFFDB:
         application of *dist* to getting a promoter can be changed by the other
         kwargs below:
 
-        If *bidirectional* is True (default), then include *dist* bp on BOTH
-        sides of the TSS.  Otherwise, only include the region *dist* bp 5' of
-        the TSS.
-        
+        *direction* can be one of 'upstream', 'downstream' or 'both'.
+
         If *truncate_at_next_feature* (None by default) is a featuretype (e.g.,
         'gene' or 'mRNA') then first try and go up to *dist* bp upstream from
         feature start.  If there is another feature of the specified
@@ -2531,6 +2542,7 @@ class GFFDB:
         
         else:
             raise ValueError, 'Feature strand is "%s" (%s) so promoter is ambiguous' % (feature.strand,feature)
+
         # Negative coords not allowed; truncate to beginning of chrom (note the
         # incrementing of start and decrementing of stop below, so this will
         # become 1 instead of 0)
@@ -2540,11 +2552,14 @@ class GFFDB:
         if downstream < 0:
             downstream = 0
 
-        if bidirectional:
+        if direction == 'both':
             coords = [upstream,downstream]
-        else:
+        elif direction == 'upstream':
             coords = [upstream, TSS]
-
+        elif direction == 'downstream':
+            coords = [downstream, TSS]
+        else:
+            raise ValueError, "need to have a direction of either 'both', 'upstream', or 'downstream'"
         coords.sort()
         start,stop = coords
 

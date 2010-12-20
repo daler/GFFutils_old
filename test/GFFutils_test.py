@@ -1040,7 +1040,8 @@ FBtr0300690	FBgn0031208	chr2L	+	7529	9484	7680	9276	3	7529,8193,8668,	8116,8589,
 
     def promoter_test(self):
         # test defaults of bidirectional=True and dist=1000
-        observed = self.G.promoter(id='FBgn0031208')
+        print 'original:', self.G['FBgn0031208']
+        observed = self.G.promoter(id='FBgn0031208', direction='both')
         expected = self.Feature(chrom='chr2L',start=6529,stop=8529,strand='+')
         expected.add_attribute('ID','promoter:FBgn0031208')
         expected.featuretype = 'promoter'
@@ -1050,13 +1051,13 @@ FBtr0300690	FBgn0031208	chr2L	+	7529	9484	7680	9276	3	7529,8193,8668,	8116,8589,
         print 'expected:'
         print expected
 
-        # 1000 upstream, 1000 downstream -- and the TSS itself.
+        # 1000 upstream and the TSS itself.
         assert len(observed) == 2001
         assert observed == expected
 
 
         # Test various kwargs
-        observed = self.G.promoter(id='FBgn0031208',dist=100,bidirectional=False)
+        observed = self.G.promoter(id='FBgn0031208',dist=100)
         expected = self.Feature(chrom='chr2L',start=7429,stop=7529,strand='+')
         expected.add_attribute('ID','promoter:FBgn0031208')
         expected.featuretype = 'promoter'
@@ -1068,10 +1069,25 @@ FBtr0300690	FBgn0031208	chr2L	+	7529	9484	7680	9276	3	7529,8193,8668,	8116,8589,
         assert len(observed) == 101
         assert observed == expected
 
+
+        # Test various kwargs
+        observed = self.G.promoter(id='FBgn0031208',dist=100,direction='downstream')
+        expected = self.Feature(chrom='chr2L',start=7529,stop=7629,strand='+')
+        expected.add_attribute('ID','promoter:FBgn0031208')
+        expected.featuretype = 'promoter'
+        print 'observed:'
+        print observed
+        print 'len(observed):',len(observed)
+        print 'expected:'
+        print expected
+        assert len(observed) == 101
+        assert observed == expected
+
+
         # Test truncation
         # TODO: add another gene in GTF file....
         if self.featureclass == 'GFF':
-            observed = self.G.promoter(id='Fk_gene_1',dist=5000,bidirectional=False,truncate_at_next_feature='gene')
+            observed = self.G.promoter(id='Fk_gene_1',dist=5000,truncate_at_next_feature='gene')
             expected = self.Feature(chrom='chr2L',start=11000,stop=11500,strand='-')
             expected.add_attribute('ID','promoter:Fk_gene_1')
             expected.featuretype = 'promoter'
